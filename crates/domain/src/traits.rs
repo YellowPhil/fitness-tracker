@@ -6,7 +6,7 @@ pub trait ExcerciseRepo {
     fn get_by_id(&self, id: &ExcerciseId) -> Result<Option<Excercise>, Self::RepoError>;
     fn save(&self, exercise: &Excercise) -> Result<(), Self::RepoError>;
 
-    fn get_all(&self) -> Vec<Excercise>;
+    fn get_all(&self) -> Result<Vec<Excercise>, Self::RepoError>;
 }
 
 pub trait WorkoutRepo {

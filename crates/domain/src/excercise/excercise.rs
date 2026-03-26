@@ -9,7 +9,7 @@ pub enum ExcerciseSource {
     UserDefined,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ExcerciseKind {
     Weighted,
     BodyWeight,
@@ -33,12 +33,26 @@ impl Excercise {
         kind: ExcerciseKind,
     ) -> Self {
         Self {
-            id: ExcerciseId(uuid::Uuid::new_v4()),
+            id: ExcerciseId::new(),
             name,
             kind,
             muscle_group,
             secondary_muscle_groups,
             source: ExcerciseSource::BuiltIn,
         }
+    }
+}
+
+impl ExcerciseId {
+    pub fn new() -> Self {
+        Self(uuid::Uuid::new_v4())
+    }
+
+    pub fn from_uuid(value: uuid::Uuid) -> Self {
+        Self(value)
+    }
+
+    pub fn as_uuid(&self) -> &uuid::Uuid {
+        &self.0
     }
 }
