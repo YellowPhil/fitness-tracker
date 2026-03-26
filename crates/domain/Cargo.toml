@@ -1,0 +1,10 @@
+[package]
+name = "domain"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ls = "0.1.0"
+strum = { version = "0.28.0", features = ["derive"] }
+time = { workspace = true }
+uuid = { version = "1.22.0", features = ["serde", "v4"] }
