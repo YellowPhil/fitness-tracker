@@ -1,20 +1,8 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::Display)]
-pub enum WeightUnits {
-    #[strum(serialize = "kg")]
-    Kilograms,
-    #[strum(serialize = "lbs")]
-    Pounds,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct WeightedLoad {
-    pub weight: f64,
-    pub units: WeightUnits,
-}
+use crate::Weight;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoadType {
-    Weighted(WeightedLoad),
+    Weighted(Weight),
     BodyWeight,
 }
 
