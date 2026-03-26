@@ -1,0 +1,13 @@
+[package]
+name = "fitness-tracker"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+members = ["crates/application", "crates/domain", "crates/infra"]
+
+[workspace.dependencies]
+time = "0.3.47"
+domain = { path = "crates/domain" }
+
+[dependencies]
