@@ -4,4 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-sqlx = { version = "0.8.6", features = ["derive", "runtime-tokio", "sqlite"] }
+domain = { version = "0.1.0", path = "../domain" }
+rusqlite = { version = "0.39.0", features = ["bundled"] }
+time = { workspace = true }
+uuid = { version = "1.22.0", features = ["v4"] }
