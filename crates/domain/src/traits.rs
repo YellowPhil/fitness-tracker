@@ -13,6 +13,7 @@ pub trait WorkoutRepo {
     type RepoError: std::error::Error + Send + Sync;
 
     fn get_by_id(&self, id: &WorkoutId) -> Result<Option<Workout>, Self::RepoError>;
+    fn get_all(&self) -> Result<Vec<Workout>, Self::RepoError>;
     fn save(&self, workout: &Workout) -> Result<(), Self::RepoError>;
 
     fn add_exercise(
