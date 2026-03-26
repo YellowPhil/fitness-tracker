@@ -1,4 +1,7 @@
-use crate::excercise::{Excercise, ExcerciseId, PerformedSet, Workout, WorkoutExercise, WorkoutId};
+use crate::{
+    excercise::{Excercise, ExcerciseId, PerformedSet, Workout, WorkoutExercise, WorkoutId},
+    health::HealthParams,
+};
 
 pub trait ExcerciseRepo {
     type RepoError: std::error::Error + Send + Sync;
@@ -28,4 +31,11 @@ pub trait WorkoutRepo {
         exercise_id: &ExcerciseId,
         set: &PerformedSet,
     ) -> Result<(), Self::RepoError>;
+}
+
+pub trait HealthRepo {
+    type RepoError: std::error::Error + Send + Sync;
+
+    fn get_health(&self) -> Result<HealthParams, Self::RepoError>;
+    fn save(&self, params: &HealthParams) -> Result<(), Self::RepoError>;
 }
