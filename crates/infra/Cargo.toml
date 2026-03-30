@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-domain = { version = "0.1.0", path = "../domain" }
-rusqlite = { version = "0.39.0", features = ["bundled"] }
-time = { workspace = true }
+domain = { workspace = true, features = ["rusqlite"] }
+application = { path = "../application" }
+rusqlite = { version = "0.39.0", features = ["bundled", "time"] }
+time = { workspace = true, features = ["serde"] }
+thiserror = "2.0.18"
 uuid = { version = "1.22.0", features = ["v4"] }
+axum = { version = "0.8.8", features = ["json"] }
+serde = { version = "1", features = ["derive"] }

@@ -1,5 +1,6 @@
-pub mod excercies;
-pub mod workouts;
+mod repos;
+pub mod web;
 
-pub use excercies::{SqliteExcerciseRepo, SqliteExcerciseRepoError};
-pub use workouts::{SqliteWorkoutRepo, SqliteWorkoutRepoError};
+pub use repos::excercies::{SqliteExcerciseDb, SqliteExcerciseRepo, SqliteExcerciseRepoError};
+pub use repos::workouts::{SqliteWorkoutDb, SqliteWorkoutRepo, SqliteWorkoutRepoError};
+pub use web::{Databases, router};
