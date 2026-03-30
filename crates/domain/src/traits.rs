@@ -12,6 +12,8 @@ pub trait ExcerciseRepo {
     fn save(&self, exercise: &Excercise) -> Result<(), Self::RepoError>;
 
     fn get_all(&self) -> Result<Vec<Excercise>, Self::RepoError>;
+
+    fn delete(&self, id: &ExcerciseId) -> Result<(), Self::RepoError>;
 }
 
 pub trait WorkoutRepo {
@@ -35,6 +37,36 @@ pub trait WorkoutRepo {
     ) -> Result<(), Self::RepoError>;
 
     fn get_by_date(&self, date: Date) -> Result<Vec<Workout>, Self::RepoError>;
+
+    fn delete(&self, id: &WorkoutId) -> Result<(), Self::RepoError>;
+
+    fn update_name(
+        &self,
+        id: &WorkoutId,
+        name: Option<&str>,
+    ) -> Result<(), Self::RepoError>;
+
+    fn remove_exercise(
+        &self,
+        workout_id: &WorkoutId,
+        exercise_id: &ExcerciseId,
+    ) -> Result<(), Self::RepoError>;
+
+    fn remove_exercise_from_all(&self, exercise_id: &ExcerciseId)
+        -> Result<(), Self::RepoError>;
+
+    fn remove_set(
+        &self,
+        workout_id: &WorkoutId,
+        exercise_id: &ExcerciseId,
+        set_index: usize,
+    ) -> Result<(), Self::RepoError>;
+
+    fn get_dates_in_range(
+        &self,
+        from: Date,
+        to: Date,
+    ) -> Result<Vec<Date>, Self::RepoError>;
 }
 
 pub trait HealthRepo {

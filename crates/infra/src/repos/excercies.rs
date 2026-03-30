@@ -129,6 +129,14 @@ impl ExcerciseRepo for SqliteExcerciseRepo<'_> {
 
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
+
+    fn delete(&self, id: &ExcerciseId) -> Result<(), Self::RepoError> {
+        self.connection.execute(
+            "DELETE FROM excercises WHERE id = ?1 AND user_id = ?2",
+            params![id, self.user_id],
+        )?;
+        Ok(())
+    }
 }
 
 /// Comma-separated MuscleGroup integers → single TEXT column.

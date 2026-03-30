@@ -112,4 +112,67 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
             .get_by_date(date)
             .map_err(AppError::WorkoutRepo)
     }
+
+    pub fn delete_excercise(
+        &self,
+        id: &ExcerciseId,
+    ) -> Result<(), AppError<E::RepoError, W::RepoError>> {
+        self.workout_repo
+            .remove_exercise_from_all(id)
+            .map_err(AppError::WorkoutRepo)?;
+        self.excercise_repo
+            .delete(id)
+            .map_err(AppError::ExcerciseRepo)?;
+        Ok(())
+    }
+
+    pub fn delete_workout(
+        &self,
+        id: &WorkoutId,
+    ) -> Result<(), AppError<E::RepoError, W::RepoError>> {
+        self.workout_repo
+            .delete(id)
+            .map_err(AppError::WorkoutRepo)
+    }
+
+    pub fn update_workout_name(
+        &self,
+        id: &WorkoutId,
+        name: Option<&str>,
+    ) -> Result<(), AppError<E::RepoError, W::RepoError>> {
+        self.workout_repo
+            .update_name(id, name)
+            .map_err(AppError::WorkoutRepo)
+    }
+
+    pub fn remove_excercise_from_workout(
+        &self,
+        workout_id: &WorkoutId,
+        excercise_id: &ExcerciseId,
+    ) -> Result<(), AppError<E::RepoError, W::RepoError>> {
+        self.workout_repo
+            .remove_exercise(workout_id, excercise_id)
+            .map_err(AppError::WorkoutRepo)
+    }
+
+    pub fn remove_set_from_workout(
+        &self,
+        workout_id: &WorkoutId,
+        excercise_id: &ExcerciseId,
+        set_index: usize,
+    ) -> Result<(), AppError<E::RepoError, W::RepoError>> {
+        self.workout_repo
+            .remove_set(workout_id, excercise_id, set_index)
+            .map_err(AppError::WorkoutRepo)
+    }
+
+    pub fn get_workout_dates_in_range(
+        &self,
+        from: Date,
+        to: Date,
+    ) -> Result<Vec<Date>, AppError<E::RepoError, W::RepoError>> {
+        self.workout_repo
+            .get_dates_in_range(from, to)
+            .map_err(AppError::WorkoutRepo)
+    }
 }

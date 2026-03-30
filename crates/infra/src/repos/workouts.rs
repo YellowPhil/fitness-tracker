@@ -6,7 +6,7 @@ use domain::{
     types::{UserId, Weight, WeightUnits},
 };
 use rusqlite::{Connection, OptionalExtension, params};
-use time::OffsetDateTime;
+use time::{Date, OffsetDateTime};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SqliteWorkoutRepoError {
@@ -18,6 +18,8 @@ pub enum SqliteWorkoutRepoError {
     MissingWeightForWeightedSet,
     #[error("missing weight units for weighted set")]
     MissingWeightUnitsForWeightedSet,
+    #[error("invalid date string from database: {0}")]
+    InvalidDateString(String),
 }
 
 pub struct SqliteWorkoutDb {
@@ -341,6 +343,153 @@ impl WorkoutRepo for SqliteWorkoutRepo<'_> {
             .map(|(id, name, sd, ed)| self.build_workout(id, name, sd, ed))
             .collect()
     }
+
+    fn delete(&self, id: &WorkoutId) -> Result<(), Self::RepoError> {
+        let tx = self.connection.unchecked_transaction()?;
+        tx.execute(
+            "DELETE FROM performed_sets WHERE workout_id = ?1 AND user_id = ?2",
+            params![id, self.user_id],
+        )?;
+        tx.execute(
+            "DELETE FROM workout_exercises WHERE workout_id = ?1 AND user_id = ?2",
+            params![id, self.user_id],
+        )?;
+        tx.execute(
+            "DELETE FROM workouts WHERE id = ?1 AND user_id = ?2",
+            params![id, self.user_id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn update_name(
+        &self,
+        id: &WorkoutId,
+        name: Option<&str>,
+    ) -> Result<(), Self::RepoError> {
+        self.connection.execute(
+            "UPDATE workouts SET name = ?3 WHERE id = ?1 AND user_id = ?2",
+            params![id, self.user_id, name],
+        )?;
+        Ok(())
+    }
+
+    fn remove_exercise(
+        &self,
+        workout_id: &WorkoutId,
+        exercise_id: &ExcerciseId,
+    ) -> Result<(), Self::RepoError> {
+        let tx = self.connection.unchecked_transaction()?;
+        let entry_order: Option<i64> = tx
+            .query_row(
+                "SELECT entry_order FROM workout_exercises
+                 WHERE workout_id = ?1 AND user_id = ?2 AND excercise_id = ?3",
+                params![workout_id, self.user_id, exercise_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        let Some(order) = entry_order else {
+            tx.commit()?;
+            return Ok(());
+        };
+
+        tx.execute(
+            "DELETE FROM workout_exercises
+             WHERE workout_id = ?1 AND user_id = ?2 AND excercise_id = ?3",
+            params![workout_id, self.user_id, exercise_id],
+        )?;
+        tx.execute(
+            "UPDATE workout_exercises SET entry_order = entry_order - 1
+             WHERE workout_id = ?1 AND user_id = ?2 AND entry_order > ?3",
+            params![workout_id, self.user_id, order],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn remove_exercise_from_all(
+        &self,
+        exercise_id: &ExcerciseId,
+    ) -> Result<(), Self::RepoError> {
+        self.connection.execute(
+            "DELETE FROM performed_sets WHERE excercise_id = ?1 AND user_id = ?2",
+            params![exercise_id, self.user_id],
+        )?;
+        self.connection.execute(
+            "DELETE FROM workout_exercises WHERE excercise_id = ?1 AND user_id = ?2",
+            params![exercise_id, self.user_id],
+        )?;
+        Ok(())
+    }
+
+    fn remove_set(
+        &self,
+        workout_id: &WorkoutId,
+        exercise_id: &ExcerciseId,
+        set_index: usize,
+    ) -> Result<(), Self::RepoError> {
+        let set_order = set_index as i64;
+        let tx = self.connection.unchecked_transaction()?;
+        let changed = tx.execute(
+            "DELETE FROM performed_sets
+             WHERE workout_id = ?1 AND user_id = ?2 AND excercise_id = ?3 AND set_order = ?4",
+            params![workout_id, self.user_id, exercise_id, set_order],
+        )?;
+        if changed > 0 {
+            tx.execute(
+                "UPDATE performed_sets SET set_order = set_order - 1
+                 WHERE workout_id = ?1 AND user_id = ?2 AND excercise_id = ?3 AND set_order > ?4",
+                params![workout_id, self.user_id, exercise_id, set_order],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn get_dates_in_range(
+        &self,
+        from: Date,
+        to: Date,
+    ) -> Result<Vec<Date>, Self::RepoError> {
+        let mut stmt = self.connection.prepare(
+            "SELECT DISTINCT DATE(start_date) AS d
+             FROM workouts
+             WHERE user_id = ?1 AND DATE(start_date) >= ?2 AND DATE(start_date) <= ?3
+             ORDER BY d ASC",
+        )?;
+
+        let from_s = from.to_string();
+        let to_s = to.to_string();
+        let rows = stmt.query_map(params![self.user_id, from_s, to_s], |row| {
+            row.get::<_, String>(0)
+        })?;
+
+        rows.collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .map(|s| date_from_ymd_str(&s))
+            .collect::<Result<Vec<_>, _>>()
+    }
+}
+
+fn date_from_ymd_str(s: &str) -> Result<Date, SqliteWorkoutRepoError> {
+    let mut p = s.split('-');
+    let year: i32 = p
+        .next()
+        .and_then(|x| x.parse().ok())
+        .ok_or_else(|| SqliteWorkoutRepoError::InvalidDateString(s.to_string()))?;
+    let month_n: u8 = p
+        .next()
+        .and_then(|x| x.parse().ok())
+        .ok_or_else(|| SqliteWorkoutRepoError::InvalidDateString(s.to_string()))?;
+    let day: u8 = p
+        .next()
+        .and_then(|x| x.parse().ok())
+        .ok_or_else(|| SqliteWorkoutRepoError::InvalidDateString(s.to_string()))?;
+    let month = time::Month::try_from(month_n)
+        .map_err(|_| SqliteWorkoutRepoError::InvalidDateString(s.to_string()))?;
+    Date::from_calendar_date(year, month, day)
+        .map_err(|_| SqliteWorkoutRepoError::InvalidDateString(s.to_string()))
 }
 
 /// LoadType spans multiple columns — still needs manual encode/decode.

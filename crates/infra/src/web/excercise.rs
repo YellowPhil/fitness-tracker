@@ -1,20 +1,22 @@
-use axum::extract::State;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::{Json, Router};
-use domain::excercise::{Excercise, ExcerciseKind, ExcerciseSource, MuscleGroup};
+use domain::excercise::{Excercise, ExcerciseId, ExcerciseKind, ExcerciseSource, MuscleGroup};
 use serde::{Deserialize, Serialize};
 
 use super::{ApiError, AppState, AuthUser, lock_dbs};
 
 pub fn routes() -> Router<AppState> {
-    Router::new().route(
-        "/",
-        axum::routing::get(list_exercises).post(create_exercise),
-    )
+    Router::new()
+        .route(
+            "/",
+            axum::routing::get(list_exercises).post(create_exercise),
+        )
+        .route(
+            "/{exercise_id}",
+            axum::routing::delete(delete_exercise),
+        )
 }
-
-// ---------------------------------------------------------------------------
-// DTOs
-// ---------------------------------------------------------------------------
 
 #[derive(Serialize)]
 struct ExcerciseResponse {
@@ -76,9 +78,9 @@ fn parse_excercise_kind(s: &str) -> Result<ExcerciseKind, ApiError> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Handlers
-// ---------------------------------------------------------------------------
+fn parse_uuid(s: &str) -> Result<uuid::Uuid, ApiError> {
+    uuid::Uuid::parse_str(s).map_err(|e| ApiError::Internal(format!("invalid uuid: {e}")))
+}
 
 async fn list_exercises(
     user: AuthUser,
@@ -95,7 +97,7 @@ async fn create_exercise(
     user: AuthUser,
     State(state): State<AppState>,
     Json(body): Json<CreateExcerciseRequest>,
-) -> Result<axum::http::StatusCode, ApiError> {
+) -> Result<StatusCode, ApiError> {
     let kind = parse_excercise_kind(&body.kind)?;
     let muscle_group = parse_muscle_group(&body.muscle_group)?;
     let secondary = body
@@ -113,5 +115,17 @@ async fn create_exercise(
     app.add_new_excercise(body.name, muscle_group, secondary, kind)
         .map_err(ApiError::internal)?;
 
-    Ok(axum::http::StatusCode::CREATED)
+    Ok(StatusCode::CREATED)
+}
+
+async fn delete_exercise(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Path(exercise_id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let id = ExcerciseId::from_uuid(parse_uuid(&exercise_id)?);
+    let dbs = lock_dbs(&state)?;
+    let app = dbs.gym_app(user.0);
+    app.delete_excercise(&id).map_err(ApiError::internal)?;
+    Ok(StatusCode::NO_CONTENT)
 }
