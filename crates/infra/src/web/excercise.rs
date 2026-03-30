@@ -3,6 +3,7 @@ use axum::http::StatusCode;
 use axum::{Json, Router};
 use domain::excercise::{Excercise, ExcerciseId, ExcerciseKind, ExcerciseSource, MuscleGroup};
 use serde::{Deserialize, Serialize};
+use tracing::instrument;
 
 use super::{ApiError, AppState, AuthUser, lock_dbs};
 
@@ -66,7 +67,7 @@ fn parse_muscle_group(s: &str) -> Result<MuscleGroup, ApiError> {
         "arms" => Ok(MuscleGroup::Arms),
         "legs" => Ok(MuscleGroup::Legs),
         "core" => Ok(MuscleGroup::Core),
-        _ => Err(ApiError::Internal(format!("unknown muscle group: {s}"))),
+        _ => Err(ApiError::validation(format!("unknown muscle group: {s}"))),
     }
 }
 
@@ -74,14 +75,15 @@ fn parse_excercise_kind(s: &str) -> Result<ExcerciseKind, ApiError> {
     match s.to_lowercase().as_str() {
         "weighted" => Ok(ExcerciseKind::Weighted),
         "bodyweight" => Ok(ExcerciseKind::BodyWeight),
-        _ => Err(ApiError::Internal(format!("unknown exercise kind: {s}"))),
+        _ => Err(ApiError::validation(format!("unknown exercise kind: {s}"))),
     }
 }
 
 fn parse_uuid(s: &str) -> Result<uuid::Uuid, ApiError> {
-    uuid::Uuid::parse_str(s).map_err(|e| ApiError::Internal(format!("invalid uuid: {e}")))
+    uuid::Uuid::parse_str(s).map_err(|e| ApiError::validation(format!("invalid uuid: {e}")))
 }
 
+#[instrument(skip(state, user), fields(user_id = user.0.as_i64()))]
 async fn list_exercises(
     user: AuthUser,
     State(state): State<AppState>,
@@ -93,6 +95,7 @@ async fn list_exercises(
     Ok(Json(exercises.into_iter().map(Into::into).collect()))
 }
 
+#[instrument(skip(state, user, body), fields(user_id = user.0.as_i64()))]
 async fn create_exercise(
     user: AuthUser,
     State(state): State<AppState>,
@@ -118,6 +121,10 @@ async fn create_exercise(
     Ok(StatusCode::CREATED)
 }
 
+#[instrument(
+    skip(state, user),
+    fields(user_id = user.0.as_i64(), exercise_id = %exercise_id)
+)]
 async fn delete_exercise(
     user: AuthUser,
     State(state): State<AppState>,

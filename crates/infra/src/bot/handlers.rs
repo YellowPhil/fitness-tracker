@@ -4,6 +4,7 @@ use anyhow::Context;
 use teloxide::prelude::*;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, WebAppInfo};
 use teloxide::utils::command::BotCommands;
+use tracing::instrument;
 use url::Url;
 
 pub type HandlerResult = anyhow::Result<()>;
@@ -17,6 +18,7 @@ pub enum Command {
     Help,
 }
 
+#[instrument(skip(bot, msg, web_app_url), fields(cmd = ?cmd), err)]
 pub async fn handle_command(
     bot: Bot,
     msg: Message,
@@ -50,6 +52,7 @@ pub async fn handle_command(
     Ok(())
 }
 
+#[instrument(skip(bot, msg), err)]
 pub async fn handle_generic_message(bot: Bot, msg: Message) -> HandlerResult {
     bot.send_message(
         msg.chat.id,

@@ -8,10 +8,12 @@ use std::path::Path;
 use axum::Router;
 use axum::extract::FromRequestParts;
 use tower_http::services::ServeDir;
+use tower_http::trace::TraceLayer;
 use axum::http::StatusCode;
 use axum::http::request::Parts;
 use axum::response::{IntoResponse, Response};
 use domain::types::UserId;
+use tracing::{debug, error, instrument, warn};
 
 use crate::{SqliteExcerciseDb, SqliteExcerciseRepo, SqliteWorkoutDb, SqliteWorkoutRepo};
 
@@ -52,7 +54,7 @@ pub fn router(dbs: Databases) -> Router<()> {
 
 /// JSON API under `/api/*` plus the built SPA from `web/dist` when `web/dist/index.html` exists.
 pub fn http_router(dbs: Databases) -> Router<()> {
-    let api = router(dbs);
+    let api = router(dbs).layer(TraceLayer::new_for_http());
     let dist = Path::new("web/dist");
     if dist.join("index.html").exists() {
         Router::new()
@@ -68,6 +70,7 @@ pub struct AuthUser(pub UserId);
 impl FromRequestParts<AppState> for AuthUser {
     type Rejection = ApiError;
 
+    #[instrument(skip(parts, _state))]
     async fn from_request_parts(
         parts: &mut Parts,
         _state: &AppState,
@@ -90,7 +93,15 @@ pub enum ApiError {
 }
 
 impl ApiError {
+    /// Repository or application failure surfaced as HTTP 500.
     pub fn internal(err: impl std::fmt::Display) -> Self {
+        error!(error = %err, "internal error");
+        Self::Internal(err.to_string())
+    }
+
+    /// Client-side parse / validation issues (still HTTP 500 for this API).
+    pub fn validation(err: impl std::fmt::Display) -> Self {
+        warn!(error = %err, "request validation failed");
         Self::Internal(err.to_string())
     }
 }
@@ -98,8 +109,14 @@ impl ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, msg) = match self {
-            Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
-            Self::NotFound => (StatusCode::NOT_FOUND, "not found"),
+            Self::Unauthorized => {
+                warn!("responding unauthorized (missing or invalid x-user-id)");
+                (StatusCode::UNAUTHORIZED, "unauthorized")
+            }
+            Self::NotFound => {
+                debug!("responding not found");
+                (StatusCode::NOT_FOUND, "not found")
+            }
             Self::Internal(ref e) => {
                 return (StatusCode::INTERNAL_SERVER_ERROR, e.clone()).into_response();
             }
@@ -109,7 +126,8 @@ impl IntoResponse for ApiError {
 }
 
 impl<T> From<PoisonError<T>> for ApiError {
-    fn from(_: PoisonError<T>) -> Self {
+    fn from(err: PoisonError<T>) -> Self {
+        error!(error = %err, "database mutex poisoned");
         Self::Internal("database lock poisoned".into())
     }
 }

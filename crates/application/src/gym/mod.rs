@@ -6,6 +6,7 @@ use domain::{
     traits::*,
 };
 use time::{Date, OffsetDateTime};
+use tracing::instrument;
 
 pub use super::error::AppError;
 
@@ -22,6 +23,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
         }
     }
 
+    #[instrument(skip(self), err)]
     pub fn get_all_excercises(
         &self,
     ) -> Result<Vec<Excercise>, AppError<E::RepoError, W::RepoError>> {
@@ -30,10 +32,16 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
             .map_err(AppError::ExcerciseRepo)
     }
 
+    #[instrument(skip(self), err)]
     pub fn get_all_workouts(&self) -> Result<Vec<Workout>, AppError<E::RepoError, W::RepoError>> {
         self.workout_repo.get_all().map_err(AppError::WorkoutRepo)
     }
 
+    #[instrument(
+        skip(self, name, secondary_muscle_groups),
+        fields(muscle_group = ?muscle_group, kind = ?kind),
+        err
+    )]
     pub fn add_new_excercise(
         &self,
         name: String,
@@ -48,6 +56,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
         Ok(())
     }
 
+    #[instrument(skip(self), fields(name = ?name, date = ?date), err)]
     pub fn create_new_workout(
         &self,
         name: Option<String>,
@@ -63,6 +72,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
         Ok(workout)
     }
 
+    #[instrument(skip(self, workout), err)]
     pub fn save_workout(
         &self,
         workout: &Workout,
@@ -72,6 +82,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
             .map_err(AppError::WorkoutRepo)
     }
 
+    #[instrument(skip(self), fields(workout_id = ?workout_id, excercise_id = ?excercise_id), err)]
     pub fn add_excercise_to_workout(
         &self,
         workout_id: &WorkoutId,
@@ -83,6 +94,11 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
         Ok(())
     }
 
+    #[instrument(
+        skip(self, set),
+        fields(workout_id = ?workout_id, excercise_id = ?excercise_id),
+        err
+    )]
     pub fn add_set_for_excercise(
         &self,
         workout_id: &WorkoutId,
@@ -95,6 +111,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
         Ok(())
     }
 
+    #[instrument(skip(self), fields(workout_id = ?id), err)]
     pub fn get_workout_by_id(
         &self,
         id: &WorkoutId,
@@ -104,6 +121,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
             .map_err(AppError::WorkoutRepo)
     }
 
+    #[instrument(skip(self), fields(date = ?date), err)]
     pub fn get_workout_by_date(
         &self,
         date: Date,
@@ -113,6 +131,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
             .map_err(AppError::WorkoutRepo)
     }
 
+    #[instrument(skip(self), fields(excercise_id = ?id), err)]
     pub fn delete_excercise(
         &self,
         id: &ExcerciseId,
@@ -126,6 +145,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
         Ok(())
     }
 
+    #[instrument(skip(self), fields(workout_id = ?id), err)]
     pub fn delete_workout(
         &self,
         id: &WorkoutId,
@@ -135,6 +155,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
             .map_err(AppError::WorkoutRepo)
     }
 
+    #[instrument(skip(self), fields(workout_id = ?id, name = ?name), err)]
     pub fn update_workout_name(
         &self,
         id: &WorkoutId,
@@ -145,6 +166,11 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
             .map_err(AppError::WorkoutRepo)
     }
 
+    #[instrument(
+        skip(self),
+        fields(workout_id = ?workout_id, excercise_id = ?excercise_id),
+        err
+    )]
     pub fn remove_excercise_from_workout(
         &self,
         workout_id: &WorkoutId,
@@ -155,6 +181,15 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
             .map_err(AppError::WorkoutRepo)
     }
 
+    #[instrument(
+        skip(self),
+        fields(
+            workout_id = ?workout_id,
+            excercise_id = ?excercise_id,
+            set_index = set_index
+        ),
+        err
+    )]
     pub fn remove_set_from_workout(
         &self,
         workout_id: &WorkoutId,
@@ -166,6 +201,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
             .map_err(AppError::WorkoutRepo)
     }
 
+    #[instrument(skip(self), fields(from = ?from, to = ?to), err)]
     pub fn get_workout_dates_in_range(
         &self,
         from: Date,

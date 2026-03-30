@@ -5,6 +5,7 @@ use domain::excercise::{ExcerciseId, LoadType, PerformedSet, Workout, WorkoutExe
 use domain::types::{Weight, WeightUnits};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+use tracing::instrument;
 
 use super::{ApiError, AppState, AuthUser, lock_dbs};
 
@@ -152,38 +153,38 @@ enum LoadRequest {
 }
 
 fn parse_uuid(s: &str) -> Result<uuid::Uuid, ApiError> {
-    uuid::Uuid::parse_str(s).map_err(|e| ApiError::Internal(format!("invalid uuid: {e}")))
+    uuid::Uuid::parse_str(s).map_err(|e| ApiError::validation(format!("invalid uuid: {e}")))
 }
 
 fn parse_date(s: &str) -> Result<time::Date, ApiError> {
     let parts: Vec<&str> = s.split('-').collect();
     if parts.len() != 3 {
-        return Err(ApiError::Internal(format!(
+        return Err(ApiError::validation(format!(
             "invalid date format, expected YYYY-MM-DD: {s}"
         )));
     }
     let year: i32 = parts[0]
         .parse()
-        .map_err(|_| ApiError::Internal(format!("invalid year in date: {s}")))?;
+        .map_err(|_| ApiError::validation(format!("invalid year in date: {s}")))?;
     let month: u8 = parts[1]
         .parse()
-        .map_err(|_| ApiError::Internal(format!("invalid month in date: {s}")))?;
+        .map_err(|_| ApiError::validation(format!("invalid month in date: {s}")))?;
     let day: u8 = parts[2]
         .parse()
-        .map_err(|_| ApiError::Internal(format!("invalid day in date: {s}")))?;
+        .map_err(|_| ApiError::validation(format!("invalid day in date: {s}")))?;
 
     let month = time::Month::try_from(month)
-        .map_err(|_| ApiError::Internal(format!("month out of range: {s}")))?;
+        .map_err(|_| ApiError::validation(format!("month out of range: {s}")))?;
 
     time::Date::from_calendar_date(year, month, day)
-        .map_err(|e| ApiError::Internal(format!("invalid date: {e}")))
+        .map_err(|e| ApiError::validation(format!("invalid date: {e}")))
 }
 
 fn parse_weight_units(s: &str) -> Result<WeightUnits, ApiError> {
     match s.to_lowercase().as_str() {
         "kg" | "kilograms" => Ok(WeightUnits::Kilograms),
         "lbs" | "pounds" => Ok(WeightUnits::Pounds),
-        _ => Err(ApiError::Internal(format!("unknown weight units: {s}"))),
+        _ => Err(ApiError::validation(format!("unknown weight units: {s}"))),
     }
 }
 
@@ -197,6 +198,10 @@ fn load_request_to_domain(req: LoadRequest) -> Result<LoadType, ApiError> {
     }
 }
 
+#[instrument(
+    skip(state, user, query),
+    fields(user_id = user.0.as_i64(), filter_date = ?query.date)
+)]
 async fn list_workouts(
     user: AuthUser,
     State(state): State<AppState>,
@@ -216,6 +221,7 @@ async fn list_workouts(
     Ok(Json(workouts.into_iter().map(Into::into).collect()))
 }
 
+#[instrument(skip(state, user, body), fields(user_id = user.0.as_i64()))]
 async fn create_workout(
     user: AuthUser,
     State(state): State<AppState>,
@@ -230,6 +236,10 @@ async fn create_workout(
     Ok((StatusCode::CREATED, Json(workout.into())))
 }
 
+#[instrument(
+    skip(state, user),
+    fields(user_id = user.0.as_i64(), workout_id = %workout_id)
+)]
 async fn get_workout(
     user: AuthUser,
     State(state): State<AppState>,
@@ -247,6 +257,10 @@ async fn get_workout(
     Ok(Json(workout.into()))
 }
 
+#[instrument(
+    skip(state, user),
+    fields(user_id = user.0.as_i64(), workout_id = %workout_id)
+)]
 async fn delete_workout(
     user: AuthUser,
     State(state): State<AppState>,
@@ -259,6 +273,10 @@ async fn delete_workout(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[instrument(
+    skip(state, user, body),
+    fields(user_id = user.0.as_i64(), workout_id = %workout_id)
+)]
 async fn update_workout(
     user: AuthUser,
     State(state): State<AppState>,
@@ -278,6 +296,14 @@ async fn update_workout(
     Ok(Json(workout.into()))
 }
 
+#[instrument(
+    skip(state, user),
+    fields(
+        user_id = user.0.as_i64(),
+        workout_id = %workout_id,
+        exercise_id = %exercise_id
+    )
+)]
 async fn remove_exercise_from_workout(
     user: AuthUser,
     State(state): State<AppState>,
@@ -293,6 +319,15 @@ async fn remove_exercise_from_workout(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[instrument(
+    skip(state, user),
+    fields(
+        user_id = user.0.as_i64(),
+        workout_id = %workout_id,
+        exercise_id = %exercise_id,
+        set_index = set_index
+    )
+)]
 async fn remove_set(
     user: AuthUser,
     State(state): State<AppState>,
@@ -308,6 +343,10 @@ async fn remove_set(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[instrument(
+    skip(state, user, query),
+    fields(user_id = user.0.as_i64(), from = %query.from, to = %query.to)
+)]
 async fn get_workout_dates(
     user: AuthUser,
     State(state): State<AppState>,
@@ -325,6 +364,10 @@ async fn get_workout_dates(
     }))
 }
 
+#[instrument(
+    skip(state, user, body),
+    fields(user_id = user.0.as_i64(), workout_id = %workout_id)
+)]
 async fn add_exercise_to_workout(
     user: AuthUser,
     State(state): State<AppState>,
@@ -342,6 +385,14 @@ async fn add_exercise_to_workout(
     Ok(StatusCode::CREATED)
 }
 
+#[instrument(
+    skip(state, user, body),
+    fields(
+        user_id = user.0.as_i64(),
+        workout_id = %workout_id,
+        exercise_id = %exercise_id
+    )
+)]
 async fn add_set(
     user: AuthUser,
     State(state): State<AppState>,

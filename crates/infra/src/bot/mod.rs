@@ -5,10 +5,12 @@ mod handlers;
 use teloxide::dispatching::Dispatcher;
 use teloxide::dispatching::UpdateHandler;
 use teloxide::prelude::*;
+use tracing::instrument;
 
 use self::handlers::{Command, WebAppPublicUrl, handle_command, handle_generic_message};
 
 /// Run the bot until shutdown. Requires `TELOXIDE_TOKEN` (see [`Bot::from_env`]).
+#[instrument(fields(web_app_url = %web_app_url))]
 pub async fn run_bot(web_app_url: String) {
     let bot = Bot::from_env();
     let schema = bot_schema();

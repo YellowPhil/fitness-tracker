@@ -9,6 +9,8 @@ members = ["crates/application", "crates/domain", "crates/infra"]
 [workspace.dependencies]
 time = "0.3.47"
 domain = { path = "crates/domain" }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 [dependencies]
 application = { path = "crates/application" }
@@ -19,6 +21,8 @@ time = { workspace = true }
 anyhow = "1"
 axum = { version = "0.8.8", features = ["json"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 crossterm = "0.29.0"
 ratatui = "0.30.0"
