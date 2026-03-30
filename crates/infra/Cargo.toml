@@ -12,3 +12,9 @@ thiserror = "2.0.18"
 uuid = { version = "1.22.0", features = ["v4"] }
 axum = { version = "0.8.8", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
+teloxide = { version = "0.17.0", features = ["macros"] }
+anyhow = "1"
+dptree = "0.5"
+url = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tower-http = { version = "0.6", features = ["fs"] }

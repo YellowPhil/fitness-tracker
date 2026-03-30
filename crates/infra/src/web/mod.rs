@@ -3,8 +3,11 @@ pub mod workout;
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use std::path::Path;
+
 use axum::Router;
 use axum::extract::FromRequestParts;
+use tower_http::services::ServeDir;
 use axum::http::StatusCode;
 use axum::http::request::Parts;
 use axum::response::{IntoResponse, Response};
@@ -38,13 +41,26 @@ impl Databases {
 
 pub type AppState = Arc<Mutex<Databases>>;
 
-pub fn router(dbs: Databases) -> Router {
+pub fn router(dbs: Databases) -> Router<()> {
     let state: AppState = Arc::new(Mutex::new(dbs));
 
     Router::new()
         .nest("/api/exercises", excercise::routes())
         .nest("/api/workouts", workout::routes())
         .with_state(state)
+}
+
+/// JSON API under `/api/*` plus the built SPA from `web/dist` when `web/dist/index.html` exists.
+pub fn http_router(dbs: Databases) -> Router<()> {
+    let api = router(dbs);
+    let dist = Path::new("web/dist");
+    if dist.join("index.html").exists() {
+        Router::new()
+            .merge(api)
+            .fallback_service(ServeDir::new("web/dist"))
+    } else {
+        api
+    }
 }
 
 pub struct AuthUser(pub UserId);
