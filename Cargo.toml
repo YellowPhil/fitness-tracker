@@ -11,8 +11,10 @@ time = "0.3.47"
 domain = { path = "crates/domain" }
 
 [dependencies]
+application = { path = "crates/application" }
 domain = { workspace = true }
 infra = { path = "crates/infra" }
+time = { workspace = true }
 
 crossterm = "0.29.0"
 ratatui = "0.30.0"

@@ -123,14 +123,22 @@ impl ExcerciseRepo for SqliteExcerciseRepo {
 
         row.map(
             |(id, name, kind, muscle_group, secondary_muscle_groups, source)| {
-                Self::build_excercise(id, name, kind, muscle_group, secondary_muscle_groups, source)
+                Self::build_excercise(
+                    id,
+                    name,
+                    kind,
+                    muscle_group,
+                    secondary_muscle_groups,
+                    source,
+                )
             },
         )
         .transpose()
     }
 
     fn save(&self, exercise: &Excercise) -> Result<(), Self::RepoError> {
-        let secondary_muscle_groups = encode_secondary_muscle_groups(&exercise.secondary_muscle_groups);
+        let secondary_muscle_groups =
+            encode_secondary_muscle_groups(&exercise.secondary_muscle_groups);
 
         self.connection.execute(
             "
@@ -181,7 +189,14 @@ impl ExcerciseRepo for SqliteExcerciseRepo {
             .into_iter()
             .map(
                 |(id, name, kind, muscle_group, secondary_muscle_groups, source)| {
-                    Self::build_excercise(id, name, kind, muscle_group, secondary_muscle_groups, source)
+                    Self::build_excercise(
+                        id,
+                        name,
+                        kind,
+                        muscle_group,
+                        secondary_muscle_groups,
+                        source,
+                    )
                 },
             )
             .collect()

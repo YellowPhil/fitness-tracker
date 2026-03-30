@@ -1,4 +1,4 @@
-use crate::{Height, Weight};
+use crate::types::{Height, Weight};
 
 pub struct HealthParams {
     pub height: Height,

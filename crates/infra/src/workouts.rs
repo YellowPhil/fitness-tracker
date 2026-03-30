@@ -1,11 +1,9 @@
 use std::path::Path;
 
 use domain::{
-    excercise::{
-        ExcerciseId, LoadType, PerformedSet, WeightUnits, WeightedLoad, Workout, WorkoutExercise,
-        WorkoutId,
-    },
+    excercise::{ExcerciseId, LoadType, PerformedSet, Workout, WorkoutExercise, WorkoutId},
     traits::WorkoutRepo,
+    types::{Weight, WeightUnits},
 };
 use rusqlite::{Connection, OptionalExtension, params};
 use time::OffsetDateTime;
@@ -206,6 +204,33 @@ impl SqliteWorkoutRepo {
 impl WorkoutRepo for SqliteWorkoutRepo {
     type RepoError = SqliteWorkoutRepoError;
 
+    fn get_all(&self) -> Result<Vec<Workout>, Self::RepoError> {
+        let mut statement = self.connection.prepare(
+            "
+            SELECT id, name, start_date, end_date
+            FROM workouts
+            ORDER BY start_date DESC
+            "
+        )?;
+
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, Option<i64>>(3)?,
+            ))
+        })?;
+        let stored_rows = rows.collect::<Result<Vec<_>, _>>()?;
+
+        stored_rows
+            .into_iter()
+            .map(|(id, name, start_date, end_date)| {
+                self.build_workout(id, name, start_date, end_date)
+            })
+            .collect()
+    }
+
     fn get_by_id(&self, id: &WorkoutId) -> Result<Option<Workout>, Self::RepoError> {
         let mut statement = self.connection.prepare(
             "
@@ -226,8 +251,10 @@ impl WorkoutRepo for SqliteWorkoutRepo {
             })
             .optional()?;
 
-        row.map(|(id, name, start_date, end_date)| self.build_workout(id, name, start_date, end_date))
-            .transpose()
+        row.map(|(id, name, start_date, end_date)| {
+            self.build_workout(id, name, start_date, end_date)
+        })
+        .transpose()
     }
 
     fn save(&self, workout: &Workout) -> Result<(), Self::RepoError> {
@@ -421,11 +448,7 @@ fn decode_reps(value: i64) -> Result<u32, SqliteWorkoutRepoError> {
 
 fn encode_load_type(value: &LoadType) -> (i64, Option<f64>, Option<i64>) {
     match value {
-        LoadType::Weighted(load) => (
-            1,
-            Some(load.weight),
-            Some(encode_weight_units(load.units)),
-        ),
+        LoadType::Weighted(load) => (1, Some(load.value), Some(encode_weight_units(load.units))),
         LoadType::BodyWeight => (2, None, None),
     }
 }
@@ -436,12 +459,13 @@ fn decode_load_type(
     weight_units: Option<i64>,
 ) -> Result<LoadType, SqliteWorkoutRepoError> {
     match load_type {
-        1 => Ok(LoadType::Weighted(WeightedLoad {
-            weight: weight.ok_or(SqliteWorkoutRepoError::MissingWeightForWeightedSet)?,
+        1 => Ok(LoadType::Weighted(Weight {
+            value: weight.ok_or(SqliteWorkoutRepoError::MissingWeightForWeightedSet)?,
             units: decode_weight_units(
-                weight_units.ok_or(SqliteWorkoutRepoError::MissingWeightUnitsForWeightedSet)?,
-            )?,
-        })),
+                    weight_units.ok_or(SqliteWorkoutRepoError::MissingWeightUnitsForWeightedSet)?,
+                )?,
+            }),
+        ),
         2 => Ok(LoadType::BodyWeight),
         _ => Err(SqliteWorkoutRepoError::InvalidLoadType(load_type)),
     }
@@ -465,8 +489,9 @@ fn decode_weight_units(value: i64) -> Result<WeightUnits, SqliteWorkoutRepoError
 #[cfg(test)]
 mod tests {
     use domain::{
-        excercise::{LoadType, PerformedSet, WeightUnits, WeightedLoad, Workout, WorkoutExercise},
+        excercise::{LoadType, PerformedSet, Workout, WorkoutExercise},
         traits::WorkoutRepo,
+        types::{Weight, WeightUnits},
     };
 
     use super::SqliteWorkoutRepo;
@@ -479,9 +504,9 @@ mod tests {
         let mut entry = WorkoutExercise::new(excercise_id);
         entry.notes = Some("Top set first".to_string());
         entry.add_set(PerformedSet {
-            kind: LoadType::Weighted(WeightedLoad {
-                weight: 100.0,
-                units: WeightUnits::Kilograms,
+            kind: LoadType::Weighted(Weight {
+                value: 100.0,
+                units: WeightUnits::Pounds,
             }),
             reps: 5,
         });
@@ -520,9 +545,9 @@ mod tests {
             &workout.id,
             &excercise_id,
             &PerformedSet {
-                kind: LoadType::Weighted(WeightedLoad {
-                    weight: 140.0,
-                    units: WeightUnits::Kilograms,
+                kind: LoadType::Weighted(Weight {
+                    value: 140.0,
+                    units: WeightUnits::Pounds,
                 }),
                 reps: 3,
             },
