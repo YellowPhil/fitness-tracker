@@ -2,6 +2,7 @@
 name = "fitness-tracker"
 version = "0.1.0"
 edition = "2024"
+default-run = "backend"
 
 [workspace]
 members = ["crates/application", "crates/domain", "crates/infra"]

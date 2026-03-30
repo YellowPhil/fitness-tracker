@@ -1,4 +1,6 @@
-//! Telegram bot: opens the Mini App via /start (HTTP API + static UI are served by the same binary).
+//! Telegram bot: opens the Mini App via /start.
+//!
+//! Run as the `bot` binary (`cargo run --bin bot`); the HTTP API is served by the `backend` binary.
 
 mod handlers;
 

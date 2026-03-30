@@ -7,7 +7,7 @@ edition = "2024"
 domain = { workspace = true, features = ["rusqlite"] }
 application = { path = "../application" }
 rusqlite = { version = "0.39.0", features = ["bundled", "time"] }
-time = { workspace = true, features = ["serde"] }
+time = { workspace = true, features = ["serde", "serde-well-known"] }
 thiserror = "2.0.18"
 uuid = { version = "1.22.0", features = ["v4"] }
 axum = { version = "0.8.8", features = ["json"] }
