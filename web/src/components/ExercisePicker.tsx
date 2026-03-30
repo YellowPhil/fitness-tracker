@@ -23,8 +23,9 @@ export function ExercisePicker({ workoutId, onClose }: ExercisePickerProps) {
   });
 
   function handleSelect(exerciseId: string) {
-    addExerciseToWorkout(workoutId, exerciseId);
-    onClose();
+    void addExerciseToWorkout(workoutId, exerciseId)
+      .then(() => onClose())
+      .catch(() => {});
   }
 
   return (
@@ -35,7 +36,7 @@ export function ExercisePicker({ workoutId, onClose }: ExercisePickerProps) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search exercises..."
-          className="w-full bg-surface-2 text-fg rounded-lg px-3 py-2.5 text-sm outline-none border border-transparent focus:border-accent/50 transition-colors placeholder:text-fg-muted"
+          className="w-full bg-surface-2 text-fg rounded-lg px-3 py-2.5 text-base outline-none border border-transparent focus:border-accent/50 transition-colors placeholder:text-fg-muted"
           autoFocus
         />
 

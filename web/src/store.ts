@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import * as api from "./api";
 import type {
   Exercise,
   ExerciseKind,
@@ -9,132 +10,26 @@ import type {
 } from "./types";
 import { toDateString } from "./utils";
 
-function offsetDate(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return toDateString(d);
-}
-
-const DEFAULT_EXERCISES: Exercise[] = [
-  { id: "ex-bench-press", name: "Bench Press", kind: "Weighted", muscleGroup: "Chest", source: "BuiltIn" },
-  { id: "ex-incline-db", name: "Incline Dumbbell Press", kind: "Weighted", muscleGroup: "Chest", source: "BuiltIn" },
-  { id: "ex-cable-fly", name: "Cable Fly", kind: "Weighted", muscleGroup: "Chest", source: "BuiltIn" },
-  { id: "ex-push-up", name: "Push Up", kind: "BodyWeight", muscleGroup: "Chest", source: "BuiltIn" },
-  { id: "ex-deadlift", name: "Deadlift", kind: "Weighted", muscleGroup: "Back", source: "BuiltIn" },
-  { id: "ex-barbell-row", name: "Barbell Row", kind: "Weighted", muscleGroup: "Back", source: "BuiltIn" },
-  { id: "ex-pull-up", name: "Pull Up", kind: "BodyWeight", muscleGroup: "Back", source: "BuiltIn" },
-  { id: "ex-lat-pulldown", name: "Lat Pulldown", kind: "Weighted", muscleGroup: "Back", source: "BuiltIn" },
-  { id: "ex-squat", name: "Squat", kind: "Weighted", muscleGroup: "Legs", source: "BuiltIn" },
-  { id: "ex-leg-press", name: "Leg Press", kind: "Weighted", muscleGroup: "Legs", source: "BuiltIn" },
-  { id: "ex-rdl", name: "Romanian Deadlift", kind: "Weighted", muscleGroup: "Legs", source: "BuiltIn" },
-  { id: "ex-leg-curl", name: "Leg Curl", kind: "Weighted", muscleGroup: "Legs", source: "BuiltIn" },
-  { id: "ex-ohp", name: "Overhead Press", kind: "Weighted", muscleGroup: "Arms", source: "BuiltIn" },
-  { id: "ex-bicep-curl", name: "Bicep Curl", kind: "Weighted", muscleGroup: "Arms", source: "BuiltIn" },
-  { id: "ex-tricep-push", name: "Tricep Pushdown", kind: "Weighted", muscleGroup: "Arms", source: "BuiltIn" },
-  { id: "ex-lateral-raise", name: "Lateral Raise", kind: "Weighted", muscleGroup: "Arms", source: "BuiltIn" },
-  { id: "ex-plank", name: "Plank", kind: "BodyWeight", muscleGroup: "Core", source: "BuiltIn" },
-  { id: "ex-cable-crunch", name: "Cable Crunch", kind: "Weighted", muscleGroup: "Core", source: "BuiltIn" },
-  { id: "ex-leg-raise", name: "Hanging Leg Raise", kind: "BodyWeight", muscleGroup: "Core", source: "BuiltIn" },
-];
-
-const DEFAULT_WORKOUTS: Workout[] = [
-  {
-    id: "demo-1",
-    name: "Push Day",
-    startDate: offsetDate(0),
-    entries: [
-      {
-        exerciseId: "ex-bench-press",
-        sets: [
-          { kind: { type: "Weighted", weight: { value: 80, units: "kg" } }, reps: 10 },
-          { kind: { type: "Weighted", weight: { value: 85, units: "kg" } }, reps: 8 },
-          { kind: { type: "Weighted", weight: { value: 85, units: "kg" } }, reps: 7 },
-        ],
-      },
-      {
-        exerciseId: "ex-ohp",
-        sets: [
-          { kind: { type: "Weighted", weight: { value: 40, units: "kg" } }, reps: 12 },
-          { kind: { type: "Weighted", weight: { value: 45, units: "kg" } }, reps: 10 },
-        ],
-      },
-      {
-        exerciseId: "ex-lateral-raise",
-        sets: [
-          { kind: { type: "Weighted", weight: { value: 12, units: "kg" } }, reps: 15 },
-          { kind: { type: "Weighted", weight: { value: 12, units: "kg" } }, reps: 14 },
-          { kind: { type: "Weighted", weight: { value: 12, units: "kg" } }, reps: 12 },
-        ],
-      },
-    ],
-  },
-  {
-    id: "demo-2",
-    name: "Pull Day",
-    startDate: offsetDate(-3),
-    entries: [
-      {
-        exerciseId: "ex-deadlift",
-        sets: [
-          { kind: { type: "Weighted", weight: { value: 120, units: "kg" } }, reps: 5 },
-          { kind: { type: "Weighted", weight: { value: 130, units: "kg" } }, reps: 5 },
-          { kind: { type: "Weighted", weight: { value: 140, units: "kg" } }, reps: 3 },
-        ],
-      },
-      {
-        exerciseId: "ex-barbell-row",
-        sets: [
-          { kind: { type: "Weighted", weight: { value: 70, units: "kg" } }, reps: 10 },
-          { kind: { type: "Weighted", weight: { value: 70, units: "kg" } }, reps: 10 },
-          { kind: { type: "Weighted", weight: { value: 70, units: "kg" } }, reps: 8 },
-        ],
-      },
-      {
-        exerciseId: "ex-pull-up",
-        sets: [
-          { kind: { type: "BodyWeight" }, reps: 12 },
-          { kind: { type: "BodyWeight" }, reps: 10 },
-          { kind: { type: "BodyWeight" }, reps: 8 },
-        ],
-      },
-    ],
-  },
-  {
-    id: "demo-3",
-    name: "Leg Day",
-    startDate: offsetDate(-5),
-    entries: [
-      {
-        exerciseId: "ex-squat",
-        sets: [
-          { kind: { type: "Weighted", weight: { value: 100, units: "kg" } }, reps: 8 },
-          { kind: { type: "Weighted", weight: { value: 110, units: "kg" } }, reps: 6 },
-          { kind: { type: "Weighted", weight: { value: 110, units: "kg" } }, reps: 5 },
-        ],
-      },
-      {
-        exerciseId: "ex-leg-press",
-        sets: [
-          { kind: { type: "Weighted", weight: { value: 180, units: "kg" } }, reps: 12 },
-          { kind: { type: "Weighted", weight: { value: 200, units: "kg" } }, reps: 10 },
-        ],
-      },
-      {
-        exerciseId: "ex-rdl",
-        sets: [
-          { kind: { type: "Weighted", weight: { value: 80, units: "kg" } }, reps: 10 },
-          { kind: { type: "Weighted", weight: { value: 80, units: "kg" } }, reps: 10 },
-        ],
-      },
-    ],
-  },
-];
-
 interface GymStore {
   exercises: Exercise[];
   workouts: Workout[];
+  /** Dates (YYYY-MM-DD) that have at least one workout — for calendar dots */
+  calendarWorkoutDates: string[];
   selectedDate: string;
   currentView: "calendar" | "exercises";
+  calendarViewYear: number;
+  calendarViewMonth: number;
+
+  syncError: string | null;
+  isLoading: boolean;
+
+  bootstrap: () => Promise<void>;
+  clearSyncError: () => void;
+
+  setCalendarViewport: (year: number, month: number) => void;
+  refreshExercises: () => Promise<void>;
+  refreshWorkouts: () => Promise<void>;
+  fetchCalendarDatesForMonth: (year: number, month: number) => Promise<void>;
 
   setSelectedDate: (date: string) => void;
   setCurrentView: (view: "calendar" | "exercises") => void;
@@ -143,133 +38,224 @@ interface GymStore {
     name: string,
     kind: ExerciseKind,
     muscleGroup: MuscleGroup,
-  ) => void;
-  deleteExercise: (id: string) => void;
+  ) => Promise<void>;
+  deleteExercise: (id: string) => Promise<void>;
 
-  createWorkout: (date: string, name?: string) => void;
-  deleteWorkout: (id: string) => void;
-  updateWorkoutName: (id: string, name: string) => void;
+  createWorkout: (date: string, name?: string) => Promise<void>;
+  deleteWorkout: (id: string) => Promise<void>;
+  updateWorkoutName: (id: string, name: string) => Promise<void>;
 
-  addExerciseToWorkout: (workoutId: string, exerciseId: string) => void;
-  removeExerciseFromWorkout: (workoutId: string, entryIndex: number) => void;
+  addExerciseToWorkout: (workoutId: string, exerciseId: string) => Promise<void>;
+  removeExerciseFromWorkout: (workoutId: string, exerciseId: string) => Promise<void>;
 
-  addSet: (workoutId: string, entryIndex: number, set: PerformedSet) => void;
+  addSet: (workoutId: string, exerciseId: string, set: PerformedSet) => Promise<void>;
   removeSet: (
     workoutId: string,
-    entryIndex: number,
+    exerciseId: string,
     setIndex: number,
-  ) => void;
+  ) => Promise<void>;
+}
+
+async function afterWorkoutMutation(get: () => GymStore) {
+  const s = get();
+  await Promise.all([
+    s.refreshWorkouts(),
+    s.fetchCalendarDatesForMonth(s.calendarViewYear, s.calendarViewMonth),
+  ]);
 }
 
 export const useStore = create<GymStore>()(
   persist(
-    (set) => ({
-      exercises: DEFAULT_EXERCISES,
-      workouts: DEFAULT_WORKOUTS,
+    (set, get) => ({
+      exercises: [],
+      workouts: [],
+      calendarWorkoutDates: [],
       selectedDate: toDateString(new Date()),
-      currentView: "calendar" as const,
+      currentView: "calendar",
+      calendarViewYear: new Date().getFullYear(),
+      calendarViewMonth: new Date().getMonth(),
 
-      setSelectedDate: (date) => set({ selectedDate: date }),
+      syncError: null,
+      isLoading: true,
+
+      clearSyncError: () => set({ syncError: null }),
+
+      bootstrap: async () => {
+        set({ isLoading: true, syncError: null });
+        try {
+          const now = new Date();
+          set({
+            calendarViewYear: now.getFullYear(),
+            calendarViewMonth: now.getMonth(),
+          });
+          await Promise.all([get().refreshExercises(), get().refreshWorkouts()]);
+        } catch (e) {
+          set({
+            syncError: e instanceof Error ? e.message : String(e),
+          });
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      setCalendarViewport: (year, month) => {
+        set({ calendarViewYear: year, calendarViewMonth: month });
+        void get().fetchCalendarDatesForMonth(year, month);
+      },
+
+      refreshExercises: async () => {
+        const list = await api.listExercises();
+        set({ exercises: list });
+      },
+
+      refreshWorkouts: async () => {
+        const date = get().selectedDate;
+        const list = await api.listWorkoutsForDate(date);
+        set({ workouts: list });
+      },
+
+      fetchCalendarDatesForMonth: async (year, month) => {
+        try {
+          const first = new Date(year, month, 1);
+          const last = new Date(year, month + 1, 0);
+          const from = toDateString(first);
+          const to = toDateString(last);
+          const dates = await api.getWorkoutDates(from, to);
+          set({ calendarWorkoutDates: dates });
+        } catch (e) {
+          set({
+            syncError: e instanceof Error ? e.message : String(e),
+          });
+        }
+      },
+
+      setSelectedDate: (date) => {
+        set({ selectedDate: date });
+        void (async () => {
+          try {
+            await get().refreshWorkouts();
+          } catch (e) {
+            set({
+              syncError: e instanceof Error ? e.message : String(e),
+            });
+          }
+        })();
+      },
+
       setCurrentView: (view) => set({ currentView: view }),
 
-      addExercise: (name, kind, muscleGroup) =>
-        set((s) => ({
-          exercises: [
-            ...s.exercises,
-            {
-              id: crypto.randomUUID(),
-              name,
-              kind,
-              muscleGroup,
-              source: "UserDefined" as const,
-            },
-          ],
-        })),
+      addExercise: async (name, kind, muscleGroup) => {
+        try {
+          await api.createExerciseApi(name, kind, muscleGroup);
+          await get().refreshExercises();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+          throw e;
+        }
+      },
 
-      deleteExercise: (id) =>
-        set((s) => ({
-          exercises: s.exercises.filter((e) => e.id !== id),
-          workouts: s.workouts.map((w) => ({
-            ...w,
-            entries: w.entries.filter((e) => e.exerciseId !== id),
-          })),
-        })),
+      deleteExercise: async (id) => {
+        try {
+          await api.deleteExerciseApi(id);
+          await get().refreshExercises();
+          await afterWorkoutMutation(get);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+          throw e;
+        }
+      },
 
-      createWorkout: (date, name) =>
-        set((s) => ({
-          workouts: [
-            ...s.workouts,
-            {
-              id: crypto.randomUUID(),
-              name,
-              startDate: date,
-              entries: [],
-            },
-          ],
-        })),
+      createWorkout: async (date, name) => {
+        try {
+          await api.createWorkoutApi(date, name);
+          await afterWorkoutMutation(get);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+          throw e;
+        }
+      },
 
-      deleteWorkout: (id) =>
-        set((s) => ({
-          workouts: s.workouts.filter((w) => w.id !== id),
-        })),
+      deleteWorkout: async (id) => {
+        try {
+          await api.deleteWorkoutApi(id);
+          await afterWorkoutMutation(get);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+          throw e;
+        }
+      },
 
-      updateWorkoutName: (id, name) =>
-        set((s) => ({
-          workouts: s.workouts.map((w) =>
-            w.id === id ? { ...w, name } : w,
-          ),
-        })),
+      updateWorkoutName: async (id, name) => {
+        try {
+          const trimmed = name.trim();
+          const w = await api.updateWorkoutNameApi(
+            id,
+            trimmed === "" ? null : trimmed,
+          );
+          set((s) => ({
+            workouts: s.workouts.map((x) => (x.id === id ? w : x)),
+          }));
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+          throw e;
+        }
+      },
 
-      addExerciseToWorkout: (workoutId, exerciseId) =>
-        set((s) => ({
-          workouts: s.workouts.map((w) =>
-            w.id === workoutId
-              ? { ...w, entries: [...w.entries, { exerciseId, sets: [] }] }
-              : w,
-          ),
-        })),
+      addExerciseToWorkout: async (workoutId, exerciseId) => {
+        try {
+          await api.addExerciseToWorkoutApi(workoutId, exerciseId);
+          await get().refreshWorkouts();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+          throw e;
+        }
+      },
 
-      removeExerciseFromWorkout: (workoutId, entryIndex) =>
-        set((s) => ({
-          workouts: s.workouts.map((w) =>
-            w.id === workoutId
-              ? { ...w, entries: w.entries.filter((_, i) => i !== entryIndex) }
-              : w,
-          ),
-        })),
+      removeExerciseFromWorkout: async (workoutId, exerciseId) => {
+        try {
+          await api.removeExerciseFromWorkoutApi(workoutId, exerciseId);
+          await get().refreshWorkouts();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+          throw e;
+        }
+      },
 
-      addSet: (workoutId, entryIndex, newSet) =>
-        set((s) => ({
-          workouts: s.workouts.map((w) =>
-            w.id === workoutId
-              ? {
-                  ...w,
-                  entries: w.entries.map((e, i) =>
-                    i === entryIndex
-                      ? { ...e, sets: [...e.sets, newSet] }
-                      : e,
-                  ),
-                }
-              : w,
-          ),
-        })),
+      addSet: async (workoutId, exerciseId, newSet) => {
+        try {
+          await api.addSetApi(workoutId, exerciseId, newSet);
+          await get().refreshWorkouts();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+          throw e;
+        }
+      },
 
-      removeSet: (workoutId, entryIndex, setIndex) =>
-        set((s) => ({
-          workouts: s.workouts.map((w) =>
-            w.id === workoutId
-              ? {
-                  ...w,
-                  entries: w.entries.map((e, i) =>
-                    i === entryIndex
-                      ? { ...e, sets: e.sets.filter((_, si) => si !== setIndex) }
-                      : e,
-                  ),
-                }
-              : w,
-          ),
-        })),
+      removeSet: async (workoutId, exerciseId, setIndex) => {
+        try {
+          await api.removeSetApi(workoutId, exerciseId, setIndex);
+          await get().refreshWorkouts();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+          throw e;
+        }
+      },
     }),
-    { name: "gym-tracker-storage" },
+    {
+      name: "gym-tracker-storage",
+      partialize: (s) => ({
+        selectedDate: s.selectedDate,
+        currentView: s.currentView,
+      }),
+    },
   ),
 );

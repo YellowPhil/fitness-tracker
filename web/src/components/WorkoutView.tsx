@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type FormEvent } from "react";
+import { useState, useRef, useEffect, type FormEvent, type ReactNode } from "react";
 import { useStore } from "../store";
 import { cn, formatDateHeading } from "../utils";
 import type { Exercise, PerformedSet, WorkoutExercise, Workout } from "../types";
@@ -20,7 +20,7 @@ export function WorkoutView() {
         </h3>
         {dateWorkouts.length > 0 && (
           <button
-            onClick={() => createWorkout(selectedDate)}
+            onClick={() => void createWorkout(selectedDate)}
             className="text-xs text-accent hover:text-accent-bright transition-colors font-medium"
           >
             + Workout
@@ -29,7 +29,7 @@ export function WorkoutView() {
       </div>
 
       {dateWorkouts.length === 0 ? (
-        <EmptyState onStart={() => createWorkout(selectedDate)} />
+        <EmptyState onStart={() => void createWorkout(selectedDate)} />
       ) : (
         <div className="space-y-4">
           {dateWorkouts.map((workout) => (
@@ -71,30 +71,56 @@ function WorkoutCard({
   exercises: Exercise[];
 }) {
   const [showPicker, setShowPicker] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const deleteWorkout = useStore((s) => s.deleteWorkout);
 
   return (
     <article className="bg-surface-1 rounded-xl border border-border overflow-hidden animate-slide-up">
       <div className="px-4 py-3 flex items-center justify-between border-b border-border/60">
         <WorkoutName workout={workout} />
-        <button
-          onClick={() => deleteWorkout(workout.id)}
-          className="text-fg-muted hover:text-danger transition-colors text-xs px-2 py-1 rounded hover:bg-surface-2"
-          aria-label="Delete workout"
-        >
-          Delete
-        </button>
+        {confirmDelete ? (
+          <div className="flex items-center gap-2 shrink-0 animate-fade-in">
+            <span className="text-xs text-fg-muted">Delete?</span>
+            <button
+              onClick={() => void deleteWorkout(workout.id)}
+              className="text-xs font-semibold text-danger bg-danger/10 hover:bg-danger/20 px-3 py-1 rounded-lg transition-colors"
+            >
+              Yes
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="text-xs font-semibold text-fg-muted hover:text-fg px-3 py-1 rounded-lg hover:bg-surface-2 transition-colors"
+            >
+              No
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="text-fg-muted hover:text-danger transition-colors text-xs px-2 py-1 rounded hover:bg-surface-2 shrink-0"
+            aria-label="Delete workout"
+          >
+            Delete
+          </button>
+        )}
       </div>
 
       <div className="divide-y divide-border/40">
         {workout.entries.map((entry, idx) => (
-          <ExerciseEntry
+          <SwipeToRemove
             key={`${entry.exerciseId}-${idx}`}
-            workoutId={workout.id}
-            entry={entry}
-            entryIndex={idx}
-            exercise={exercises.find((e) => e.id === entry.exerciseId)}
-          />
+            onRemove={() =>
+              void useStore
+                .getState()
+                .removeExerciseFromWorkout(workout.id, entry.exerciseId)
+            }
+          >
+            <ExerciseEntry
+              workoutId={workout.id}
+              entry={entry}
+              exercise={exercises.find((e) => e.id === entry.exerciseId)}
+            />
+          </SwipeToRemove>
         ))}
       </div>
 
@@ -115,6 +141,127 @@ function WorkoutCard({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Swipe-to-remove wrapper (touch devices only, X button stays on desktop)
+// ---------------------------------------------------------------------------
+
+function SwipeToRemove({
+  onRemove,
+  children,
+}: {
+  onRemove: () => void;
+  children: ReactNode;
+}) {
+  const [offsetX, setOffsetX] = useState(0);
+  const [removed, setRemoved] = useState(false);
+  const swipingRef = useRef(false);
+  const startX = useRef(0);
+  const startY = useRef(0);
+  const locked = useRef<"h" | "v" | null>(null);
+  const currentOffset = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+
+    function handleStart(e: TouchEvent) {
+      startX.current = e.touches[0].clientX;
+      startY.current = e.touches[0].clientY;
+      locked.current = null;
+      swipingRef.current = true;
+      currentOffset.current = 0;
+    }
+
+    function handleMove(e: TouchEvent) {
+      if (!swipingRef.current || !el) return;
+      const dx = e.touches[0].clientX - startX.current;
+      const dy = e.touches[0].clientY - startY.current;
+
+      if (!locked.current) {
+        if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+          locked.current = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
+        }
+        return;
+      }
+      if (locked.current === "v") return;
+
+      e.preventDefault();
+      const clamped = Math.min(0, dx);
+      currentOffset.current = clamped;
+      el.style.transform = `translateX(${clamped}px)`;
+      el.style.transition = "none";
+      setOffsetX(clamped);
+    }
+
+    function handleEnd() {
+      if (!swipingRef.current || !el) return;
+      swipingRef.current = false;
+      el.style.transition = "";
+
+      if (locked.current !== "h") {
+        currentOffset.current = 0;
+        el.style.transform = "translateX(0)";
+        setOffsetX(0);
+        return;
+      }
+
+      const width = containerRef.current?.offsetWidth ?? 300;
+      if (Math.abs(currentOffset.current) > width * 0.4) {
+        el.style.transform = "translateX(-100%)";
+        setRemoved(true);
+        setTimeout(onRemove, 180);
+      } else {
+        currentOffset.current = 0;
+        el.style.transform = "translateX(0)";
+        setOffsetX(0);
+      }
+    }
+
+    el.addEventListener("touchstart", handleStart, { passive: true });
+    el.addEventListener("touchmove", handleMove, { passive: false });
+    el.addEventListener("touchend", handleEnd, { passive: true });
+    return () => {
+      el.removeEventListener("touchstart", handleStart);
+      el.removeEventListener("touchmove", handleMove);
+      el.removeEventListener("touchend", handleEnd);
+    };
+  }, [onRemove]);
+
+  const showBg = offsetX < -4 || removed;
+  const pct = containerRef.current
+    ? Math.min(Math.abs(offsetX) / containerRef.current.offsetWidth, 1)
+    : 0;
+
+  return (
+    <div ref={containerRef} className="relative overflow-hidden">
+      {showBg && (
+        <div
+          className="absolute inset-0 flex items-center justify-end pr-5"
+          style={{
+            backgroundColor: `oklch(0.55 ${0.12 + pct * 0.1} 27)`,
+          }}
+        >
+          <span className="text-white text-xs font-semibold tracking-wide">
+            Remove
+          </span>
+        </div>
+      )}
+      <div
+        ref={contentRef}
+        className="relative bg-surface-1 transition-transform duration-180 ease-out"
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Workout name (inline-editable)
+// ---------------------------------------------------------------------------
+
 function WorkoutName({ workout }: { workout: Workout }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(workout.name || "");
@@ -128,9 +275,13 @@ function WorkoutName({ workout }: { workout: Workout }) {
     }
   }, [editing]);
 
-  function save() {
-    updateWorkoutName(workout.id, name.trim());
-    setEditing(false);
+  async function save() {
+    try {
+      await updateWorkoutName(workout.id, name.trim());
+      setEditing(false);
+    } catch {
+      /* syncError set in store */
+    }
   }
 
   if (editing) {
@@ -139,15 +290,15 @@ function WorkoutName({ workout }: { workout: Workout }) {
         ref={inputRef}
         value={name}
         onChange={(e) => setName(e.target.value)}
-        onBlur={save}
+        onBlur={() => void save()}
         onKeyDown={(e) => {
-          if (e.key === "Enter") save();
+          if (e.key === "Enter") void save();
           if (e.key === "Escape") {
             setName(workout.name || "");
             setEditing(false);
           }
         }}
-        className="bg-transparent text-sm font-semibold text-fg outline-none border-b border-accent pb-0.5 min-w-0"
+        className="bg-transparent text-base font-semibold text-fg outline-none border-b border-accent pb-0.5 min-w-0"
         placeholder="Workout name..."
       />
     );
@@ -170,15 +321,17 @@ function WorkoutName({ workout }: { workout: Workout }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Exercise entry (sets table + add-set form)
+// ---------------------------------------------------------------------------
+
 function ExerciseEntry({
   workoutId,
   entry,
-  entryIndex,
   exercise,
 }: {
   workoutId: string;
   entry: WorkoutExercise;
-  entryIndex: number;
   exercise: Exercise | undefined;
 }) {
   const removeExerciseFromWorkout = useStore(
@@ -200,11 +353,20 @@ function ExerciseEntry({
           </span>
         </div>
         <button
-          onClick={() => removeExerciseFromWorkout(workoutId, entryIndex)}
-          className="text-fg-muted hover:text-danger transition-colors ml-2 shrink-0"
+          onClick={() =>
+            void removeExerciseFromWorkout(workoutId, entry.exerciseId)
+          }
+          className="hidden md:flex text-fg-muted hover:text-danger transition-colors ml-2 shrink-0 items-center justify-center"
           aria-label="Remove exercise"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
             <path d="M18 6L6 18M6 6l12 12" />
           </svg>
         </button>
@@ -246,11 +408,18 @@ function ExerciseEntry({
               )}
               <span className="text-fg-secondary">{set.reps}</span>
               <button
-                onClick={() => removeSet(workoutId, entryIndex, si)}
+                onClick={() => void removeSet(workoutId, entry.exerciseId, si)}
                 className="opacity-0 group-hover:opacity-100 text-fg-muted hover:text-danger transition-all"
                 aria-label={`Remove set ${si + 1}`}
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <path d="M18 6L6 18M6 6l12 12" />
                 </svg>
               </button>
@@ -261,7 +430,7 @@ function ExerciseEntry({
 
       <AddSetForm
         workoutId={workoutId}
-        entryIndex={entryIndex}
+        exerciseId={entry.exerciseId}
         isWeighted={isWeighted}
         lastSet={entry.sets.at(-1)}
       />
@@ -269,14 +438,18 @@ function ExerciseEntry({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Add-set form
+// ---------------------------------------------------------------------------
+
 function AddSetForm({
   workoutId,
-  entryIndex,
+  exerciseId,
   isWeighted,
   lastSet,
 }: {
   workoutId: string;
-  entryIndex: number;
+  exerciseId: string;
   isWeighted: boolean;
   lastSet: PerformedSet | undefined;
 }) {
@@ -310,7 +483,7 @@ function AddSetForm({
         }
       : { kind: { type: "BodyWeight" }, reps: repsNum };
 
-    addSet(workoutId, entryIndex, newSet);
+    void addSet(workoutId, exerciseId, newSet);
     setReps("");
   }
 
@@ -324,7 +497,7 @@ function AddSetForm({
             step="0.5"
             value={weight}
             onChange={(e) => setWeight(e.target.value)}
-            className="w-16 bg-surface-2 rounded-lg px-2 py-1.5 text-sm text-center text-fg outline-none border border-transparent focus:border-accent/50 transition-colors"
+            className="w-16 bg-surface-2 rounded-lg px-2 py-1.5 text-base text-center text-fg outline-none border border-transparent focus:border-accent/50 transition-colors"
             placeholder="kg"
           />
           <span className="text-[0.65rem] text-fg-muted">kg</span>
@@ -336,8 +509,8 @@ function AddSetForm({
           inputMode="numeric"
           value={reps}
           onChange={(e) => setReps(e.target.value)}
-          className="w-16 bg-surface-2 rounded-lg px-2 py-1.5 text-sm text-center text-fg outline-none border border-transparent focus:border-accent/50 transition-colors"
-          placeholder="reps"
+            className="w-16 bg-surface-2 rounded-lg px-2 py-1.5 text-base text-center text-fg outline-none border border-transparent focus:border-accent/50 transition-colors"
+            placeholder="reps"
         />
         <span className="text-[0.65rem] text-fg-muted">reps</span>
       </div>

@@ -31,9 +31,12 @@ export function ExerciseLibrary({ onBack }: ExerciseLibraryProps) {
     e.preventDefault();
     const trimmed = formName.trim();
     if (!trimmed) return;
-    addExercise(trimmed, formKind, formMuscle);
-    setFormName("");
-    setShowForm(false);
+    void addExercise(trimmed, formKind, formMuscle)
+      .then(() => {
+        setFormName("");
+        setShowForm(false);
+      })
+      .catch(() => {});
   }
 
   return (
@@ -61,7 +64,7 @@ export function ExerciseLibrary({ onBack }: ExerciseLibraryProps) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search exercises..."
-          className="w-full bg-surface-1 text-fg rounded-xl px-4 py-3 text-sm outline-none border border-border focus:border-accent/50 transition-colors placeholder:text-fg-muted mb-4"
+          className="w-full bg-surface-1 text-fg rounded-xl px-4 py-3 text-base outline-none border border-border focus:border-accent/50 transition-colors placeholder:text-fg-muted mb-4"
         />
 
         <div className="space-y-6">
@@ -104,7 +107,7 @@ export function ExerciseLibrary({ onBack }: ExerciseLibraryProps) {
                       </span>
                       {exercise.source === "UserDefined" && (
                         <button
-                          onClick={() => deleteExercise(exercise.id)}
+                          onClick={() => void deleteExercise(exercise.id)}
                           className="text-fg-muted hover:text-danger transition-colors"
                           aria-label={`Delete ${exercise.name}`}
                         >
@@ -145,7 +148,7 @@ export function ExerciseLibrary({ onBack }: ExerciseLibraryProps) {
                   type="text"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
-                  className="w-full bg-surface-2 text-fg rounded-lg px-3 py-2.5 text-sm outline-none border border-transparent focus:border-accent/50 transition-colors"
+                  className="w-full bg-surface-2 text-fg rounded-lg px-3 py-2.5 text-base outline-none border border-transparent focus:border-accent/50 transition-colors"
                   placeholder="e.g. Hammer Curl"
                   autoFocus
                 />
