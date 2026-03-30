@@ -108,6 +108,7 @@ impl From<PerformedSet> for SetResponse {
 #[derive(Deserialize)]
 struct CreateWorkoutRequest {
     name: Option<String>,
+    #[serde(default, with = "time::serde::rfc3339::option")]
     date: Option<OffsetDateTime>,
 }
 
