@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 domain = { workspace = true }
+time = { workspace = true }
 thiserror = "2.0.18"
