@@ -5,7 +5,7 @@ use domain::{
     },
     traits::*,
 };
-use time::Date;
+use time::{Date, OffsetDateTime};
 
 pub use super::error::AppError;
 
@@ -51,8 +51,12 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
     pub fn create_new_workout(
         &self,
         name: Option<String>,
+        date: Option<OffsetDateTime>,
     ) -> Result<Workout, AppError<E::RepoError, W::RepoError>> {
-        let workout = Workout::new(name);
+        let mut workout = Workout::new(name);
+        if let Some(date) = date {
+            workout.start_date = date;
+        }
         self.workout_repo
             .save(&workout)
             .map_err(AppError::WorkoutRepo)?;

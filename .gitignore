@@ -2,3 +2,5 @@
 .cursor/
 .vscode/
 fitness.db
+.env
+.envrc
