@@ -1,3 +1,5 @@
+use time::Date;
+
 use crate::{
     excercise::{Excercise, ExcerciseId, PerformedSet, Workout, WorkoutExercise, WorkoutId},
     health::HealthParams,
@@ -31,6 +33,8 @@ pub trait WorkoutRepo {
         exercise_id: &ExcerciseId,
         set: &PerformedSet,
     ) -> Result<(), Self::RepoError>;
+
+    fn get_by_date(&self, date: Date) -> Result<Vec<Workout>, Self::RepoError>;
 }
 
 pub trait HealthRepo {
