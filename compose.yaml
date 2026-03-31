@@ -11,8 +11,6 @@ services:
       - RUST_LOG=${RUST_LOG:-info}
     volumes:
       - fitness-data:/data
-    ports:
-      - "3001:3001"
     restart: unless-stopped
 
   bot:
