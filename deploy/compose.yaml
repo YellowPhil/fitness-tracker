@@ -1,0 +1,33 @@
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: app
+    environment:
+      - BIND_ADDR=0.0.0.0:3001
+      - FITNESS_EXERCISE_DB=/data/exercises.db
+      - FITNESS_WORKOUT_DB=/data/workouts.db
+      - RUST_LOG=${RUST_LOG:-info}
+    volumes:
+      - fitness-data:/data
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+
+  bot:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: bot
+    environment:
+      - TELOXIDE_TOKEN=${TELOXIDE_TOKEN:?Set TELOXIDE_TOKEN in Coolify}
+      - FITNESS_WEB_APP_URL=${FITNESS_WEB_APP_URL:?Set FITNESS_WEB_APP_URL in Coolify}
+      - RUST_LOG=${RUST_LOG:-info}
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  fitness-data:
