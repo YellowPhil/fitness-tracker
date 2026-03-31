@@ -5,7 +5,7 @@ services:
       dockerfile: deploy/Dockerfile
       target: app
     environment:
-      - BIND_ADDR=0.0.0.0:3001
+      - BIND_ADDR=${BIND_ADDR:?Set BIND_ADDR in Coolify}
       - FITNESS_EXERCISE_DB=/data/exercises.db
       - FITNESS_WORKOUT_DB=/data/workouts.db
       - RUST_LOG=${RUST_LOG:-info}
