@@ -33,12 +33,17 @@ async fn run() -> anyhow::Result<()> {
     let health_db = SqliteHealthDb::open(&health_path).context("open FITNESS_HEALTH_DB")?;
     let dbs = Databases::new(exercise_db, workout_db, health_db);
 
+    let frontend_url = env::var("FRONTEND_URL").ok();
+    if let Some(ref url) = frontend_url {
+        tracing::info!(%url, "CORS enabled for FRONTEND_URL");
+    }
+
     let addr: SocketAddr = env::var("BIND_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:3001".into())
         .parse()
         .context("parse BIND_ADDR")?;
 
-    let app = http_router(dbs);
+    let app = http_router(dbs, frontend_url.as_deref());
     let listener = TcpListener::bind(addr)
         .await
         .with_context(|| format!("bind {addr}"))?;

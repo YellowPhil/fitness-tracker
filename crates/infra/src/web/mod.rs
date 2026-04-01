@@ -8,12 +8,15 @@ use std::path::Path;
 
 use axum::Router;
 use axum::extract::FromRequestParts;
+use axum::http::header::CONTENT_TYPE;
+use axum::http::request::Parts;
+use axum::http::{HeaderName, HeaderValue, Method, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use domain::types::UserId;
+use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
-use axum::http::StatusCode;
-use axum::http::request::Parts;
-use axum::response::{IntoResponse, Response};
-use domain::types::UserId;
 use tracing::{debug, error, instrument, warn};
 
 use crate::{
@@ -71,16 +74,43 @@ pub fn router(dbs: Databases) -> Router<()> {
 }
 
 /// JSON API under `/api/*` plus the built SPA from `web/dist` when `web/dist/index.html` exists.
-pub fn http_router(dbs: Databases) -> Router<()> {
-    let api = router(dbs).layer(TraceLayer::new_for_http());
+///
+/// When `frontend_url` is set (production: frontend on a different origin), a CORS layer is added
+/// allowing that origin to call the API.
+pub fn http_router(dbs: Databases, frontend_url: Option<&str>) -> Router<()> {
+    let api = router(dbs);
     let dist = Path::new("web/dist");
-    if dist.join("index.html").exists() {
+
+    let mut router = if dist.join("index.html").exists() {
         Router::new()
             .merge(api)
             .fallback_service(ServeDir::new("web/dist"))
     } else {
         api
+    };
+
+    router = router.route("/health", get(|| async { StatusCode::OK }));
+    router = router.layer(TraceLayer::new_for_http());
+
+    if let Some(origin) = frontend_url {
+        let cors = CorsLayer::new()
+            .allow_origin(
+                origin
+                    .parse::<HeaderValue>()
+                    .expect("FRONTEND_URL must be a valid header value"),
+            )
+            .allow_methods([
+                Method::GET,
+                Method::POST,
+                Method::PUT,
+                Method::PATCH,
+                Method::DELETE,
+            ])
+            .allow_headers([CONTENT_TYPE, HeaderName::from_static("x-user-id")]);
+        router = router.layer(cors);
     }
+
+    router
 }
 
 pub struct AuthUser(pub UserId);
