@@ -38,7 +38,7 @@ impl Excercise {
             kind,
             muscle_group,
             secondary_muscle_groups,
-            source: ExcerciseSource::BuiltIn,
+            source: ExcerciseSource::UserDefined,
         }
     }
 }
