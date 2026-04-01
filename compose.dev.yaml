@@ -21,8 +21,6 @@ services:
       - FITNESS_WORKOUT_DB=/data/workouts.db
       - FITNESS_HEALTH_DB=/data/health.db
       - RUST_LOG=${RUST_LOG:-debug}
-    ports:
-      - "3001:3001"
     volumes:
       - fitness-data:/data
     restart: unless-stopped
