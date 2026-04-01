@@ -38,6 +38,22 @@ impl Excercise {
             kind,
             muscle_group,
             secondary_muscle_groups,
+            source: ExcerciseSource::UserDefined,
+        }
+    }
+
+    pub fn built_in(
+        name: String,
+        muscle_group: MuscleGroup,
+        secondary_muscle_groups: Option<Vec<MuscleGroup>>,
+        kind: ExcerciseKind,
+    ) -> Self {
+        Self {
+            id: ExcerciseId::new(),
+            name,
+            kind,
+            muscle_group,
+            secondary_muscle_groups,
             source: ExcerciseSource::BuiltIn,
         }
     }

@@ -1,7 +1,7 @@
 use domain::{
     excercise::{
-        Excercise, ExcerciseId, ExcerciseKind, MuscleGroup, PerformedSet, Workout, WorkoutExercise,
-        WorkoutId,
+        Excercise, ExcerciseId, ExcerciseKind, ExcerciseSource, MuscleGroup, PerformedSet, Workout,
+        WorkoutExercise, WorkoutId, catalog,
     },
     traits::*,
 };
@@ -30,6 +30,30 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
         self.excercise_repo
             .get_all()
             .map_err(AppError::ExcerciseRepo)
+    }
+
+    /// Inserts the full built-in exercise catalog when the user has none yet.
+    #[instrument(skip(self), err)]
+    pub fn seed_built_in_excercises(
+        &self,
+    ) -> Result<(), AppError<E::RepoError, W::RepoError>> {
+        let existing = self
+            .excercise_repo
+            .get_all()
+            .map_err(AppError::ExcerciseRepo)?;
+
+        let has_built_ins = existing
+            .iter()
+            .any(|e| e.source == ExcerciseSource::BuiltIn);
+
+        if !has_built_ins {
+            for exercise in catalog::built_in_exercises() {
+                self.excercise_repo
+                    .save(&exercise)
+                    .map_err(AppError::ExcerciseRepo)?;
+            }
+        }
+        Ok(())
     }
 
     #[instrument(skip(self), err)]

@@ -1,11 +1,12 @@
 export type WeightUnits = "kg" | "lbs";
-export type MuscleGroup = "Chest" | "Back" | "Arms" | "Legs" | "Core";
+export type MuscleGroup = "Chest" | "Back" | "Shoulders" | "Arms" | "Legs" | "Core";
 export type ExerciseSource = "BuiltIn" | "UserDefined";
 export type ExerciseKind = "Weighted" | "BodyWeight";
 
 export const MUSCLE_GROUPS: MuscleGroup[] = [
   "Chest",
   "Back",
+  "Shoulders",
   "Arms",
   "Legs",
   "Core",
@@ -46,4 +47,12 @@ export interface Workout {
   startDate: string;
   endDate?: string;
   entries: WorkoutExercise[];
+}
+
+export type HeightUnits = "cm" | "in";
+
+export interface UserProfile {
+  weight: Weight;
+  height: { value: number; units: HeightUnits };
+  age: number;
 }

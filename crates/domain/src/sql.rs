@@ -1,7 +1,7 @@
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 
 use crate::excercise::{ExcerciseId, ExcerciseKind, ExcerciseSource, MuscleGroup, WorkoutId};
-use crate::types::{UserId, WeightUnits};
+use crate::types::{HeightUnits, UserId, WeightUnits};
 
 impl ToSql for ExcerciseId {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
@@ -91,6 +91,7 @@ impl ToSql for MuscleGroup {
             MuscleGroup::Arms => 3,
             MuscleGroup::Legs => 4,
             MuscleGroup::Core => 5,
+            MuscleGroup::Shoulders => 6,
         };
         Ok(v.into())
     }
@@ -104,6 +105,7 @@ impl FromSql for MuscleGroup {
             3 => Ok(MuscleGroup::Arms),
             4 => Ok(MuscleGroup::Legs),
             5 => Ok(MuscleGroup::Core),
+            6 => Ok(MuscleGroup::Shoulders),
             other => Err(FromSqlError::OutOfRange(other)),
         }
     }
@@ -124,6 +126,26 @@ impl FromSql for WeightUnits {
         match value.as_i64()? {
             1 => Ok(WeightUnits::Kilograms),
             2 => Ok(WeightUnits::Pounds),
+            other => Err(FromSqlError::OutOfRange(other)),
+        }
+    }
+}
+
+impl ToSql for HeightUnits {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        let v: i64 = match self {
+            HeightUnits::Centimeters => 1,
+            HeightUnits::Inches => 2,
+        };
+        Ok(v.into())
+    }
+}
+
+impl FromSql for HeightUnits {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        match value.as_i64()? {
+            1 => Ok(HeightUnits::Centimeters),
+            2 => Ok(HeightUnits::Inches),
             other => Err(FromSqlError::OutOfRange(other)),
         }
     }

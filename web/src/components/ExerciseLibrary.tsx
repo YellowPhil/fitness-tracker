@@ -3,11 +3,7 @@ import { useStore } from "../store";
 import { cn } from "../utils";
 import { MUSCLE_GROUPS, type ExerciseKind, type MuscleGroup } from "../types";
 
-interface ExerciseLibraryProps {
-  onBack: () => void;
-}
-
-export function ExerciseLibrary({ onBack }: ExerciseLibraryProps) {
+export function ExerciseLibrary() {
   const exercises = useStore((s) => s.exercises);
   const addExercise = useStore((s) => s.addExercise);
   const deleteExercise = useStore((s) => s.deleteExercise);
@@ -40,25 +36,7 @@ export function ExerciseLibrary({ onBack }: ExerciseLibraryProps) {
   }
 
   return (
-    <div className="min-h-dvh bg-surface-0">
-      <header className="sticky top-0 z-20 bg-surface-0/80 backdrop-blur-xl border-b border-border">
-        <div className="max-w-lg mx-auto px-4 h-14 flex items-center gap-3">
-          <button
-            onClick={onBack}
-            className="text-accent hover:text-accent-bright transition-colors text-sm font-medium flex items-center gap-1"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M15 18l-6-6 6-6" />
-            </svg>
-            Back
-          </button>
-          <h1 className="text-lg font-bold tracking-tight text-fg">
-            Exercise Library
-          </h1>
-        </div>
-      </header>
-
-      <main className="max-w-lg mx-auto px-4 py-4">
+    <div className="px-4 py-4">
         <input
           type="text"
           value={search}
@@ -225,7 +203,6 @@ export function ExerciseLibrary({ onBack }: ExerciseLibraryProps) {
             </button>
           )}
         </div>
-      </main>
     </div>
   );
 }
