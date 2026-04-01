@@ -20,3 +20,21 @@ export function formatDateHeading(dateStr: string): string {
     day: "numeric",
   });
 }
+
+/**
+ * Keeps focused fields visible above the on-screen keyboard and fixed bottom UI.
+ * Uses multiple passes because the keyboard often appears after the focus event.
+ */
+export function scrollInputIntoView(el: HTMLElement): void {
+  const run = () => {
+    el.scrollIntoView({
+      block: "center",
+      inline: "nearest",
+      behavior: "smooth",
+    });
+  };
+  run();
+  requestAnimationFrame(() => requestAnimationFrame(run));
+  window.setTimeout(run, 120);
+  window.setTimeout(run, 400);
+}

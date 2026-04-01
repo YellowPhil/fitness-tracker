@@ -4,7 +4,7 @@ import { CalendarStrip } from "./components/CalendarStrip";
 import { WorkoutView } from "./components/WorkoutView";
 import { ExerciseLibrary } from "./components/ExerciseLibrary";
 import { PersonalView } from "./components/PersonalView";
-import { cn } from "./utils";
+import { cn, scrollInputIntoView } from "./utils";
 
 function CalendarIcon({ active }: { active: boolean }) {
   return (
@@ -52,6 +52,47 @@ export function App() {
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
+
+  /** Mobile: scroll focused inputs into view when the keyboard opens / viewport shrinks. */
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    if (!mq.matches) return;
+
+    function isTextField(el: EventTarget | null): el is HTMLInputElement | HTMLTextAreaElement {
+      if (!(el instanceof HTMLElement)) return false;
+      if (el instanceof HTMLTextAreaElement) return true;
+      if (el instanceof HTMLInputElement) {
+        const t = el.type;
+        return (
+          t === "text" ||
+          t === "search" ||
+          t === "email" ||
+          t === "number" ||
+          t === "tel" ||
+          t === "url" ||
+          t === "password"
+        );
+      }
+      return false;
+    }
+
+    const onFocusIn = (e: FocusEvent) => {
+      if (isTextField(e.target)) scrollInputIntoView(e.target);
+    };
+
+    const onViewportChange = () => {
+      const a = document.activeElement;
+      if (isTextField(a)) scrollInputIntoView(a);
+    };
+
+    document.addEventListener("focusin", onFocusIn);
+    window.visualViewport?.addEventListener("resize", onViewportChange);
+
+    return () => {
+      document.removeEventListener("focusin", onFocusIn);
+      window.visualViewport?.removeEventListener("resize", onViewportChange);
+    };
+  }, []);
 
   const errorBanner = syncError && (
     <div className="max-w-lg mx-auto px-4 pt-2" role="alert">

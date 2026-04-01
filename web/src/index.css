@@ -83,6 +83,14 @@ body {
   overscroll-behavior-y: none;
 }
 
+/* Room below focused fields so they sit above the keyboard + fixed tab bar (see App.tsx). */
+@media (max-width: 768px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  textarea {
+    scroll-margin-bottom: max(7rem, 28svh);
+  }
+}
+
 /* Telegram Mini App: `telegram.ts` sets --color-* from `themeParams` at runtime. */
 body.telegram-mini-app {
   transition: background-color 0.15s ease, color 0.15s ease;
