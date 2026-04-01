@@ -1,3 +1,13 @@
+# Dev stack (dev branch) — deployed to dev environment.
+# Backend serves the SPA (same-origin), so VITE_API_BASE is empty.
+#
+# Required Coolify env vars:
+#   TELOXIDE_TOKEN (dev bot token)
+# Optional:
+#   BIND_ADDR (default: 0.0.0.0:3001)
+#   FRONTEND_URL (default: unset — same-origin, no CORS needed)
+#   RUST_LOG (default: debug)
+
 services:
   app:
     build:
@@ -5,13 +15,31 @@ services:
       dockerfile: deploy/Dockerfile
       target: app
     environment:
-      - BIND_ADDR=${BIND_ADDR:?Set BIND_ADDR in Coolify}
+      - BIND_ADDR=${BIND_ADDR:-0.0.0.0:3001}
+      - FRONTEND_URL=${FRONTEND_URL:-}
       - FITNESS_EXERCISE_DB=/data/exercises.db
       - FITNESS_WORKOUT_DB=/data/workouts.db
-      - RUST_LOG=${RUST_LOG:-info}
+      - FITNESS_HEALTH_DB=/data/health.db
+      - RUST_LOG=${RUST_LOG:-debug}
+    ports:
+      - "3001:3001"
     volumes:
       - fitness-data:/data
     restart: unless-stopped
+
+  bot:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+      target: bot
+    environment:
+      - TELOXIDE_TOKEN=${TELOXIDE_TOKEN:?Set TELOXIDE_TOKEN}
+      - FRONTEND_URL=${FRONTEND_URL:-}
+      - RUST_LOG=${RUST_LOG:-debug}
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
 
 volumes:
   fitness-data:

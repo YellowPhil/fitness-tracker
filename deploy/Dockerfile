@@ -20,7 +20,7 @@ COPY src/ src/
 COPY crates/ crates/
 RUN cargo build --release --bin backend --bin bot
 
-#### Frontent build ####
+#### Frontend build ####
 
 FROM node:22-slim AS frontend-builder
 WORKDIR /app
@@ -31,6 +31,27 @@ ARG VITE_API_BASE=""
 ENV VITE_API_BASE=${VITE_API_BASE}
 RUN npm run build
 
+#### Production: API-only backend (frontend served by Cloudflare Pages) ####
+
+FROM debian:bookworm-slim AS api
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates curl && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=rust-builder /app/target/release/backend /usr/local/bin/backend
+
+WORKDIR /app
+
+ENV BIND_ADDR="0.0.0.0:3001" \
+    RUST_LOG="info"
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -sf http://${BIND_ADDR}/health -o /dev/null || exit 1
+
+CMD ["backend"]
+
+#### Dev / full-stack: backend + embedded SPA ####
 
 FROM debian:bookworm-slim AS app
 
@@ -47,11 +68,12 @@ ENV BIND_ADDR="0.0.0.0:3001" \
     RUST_LOG="info"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD curl -sf http://${BIND_ADDR}/ -o /dev/null || exit 1
+    CMD curl -sf http://${BIND_ADDR}/health -o /dev/null || exit 1
 
 CMD ["backend"]
 
-#### Bot build ####
+#### Bot ####
+
 FROM debian:bookworm-slim AS bot
 
 RUN apt-get update && \
