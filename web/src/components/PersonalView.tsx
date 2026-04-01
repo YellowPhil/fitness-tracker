@@ -22,7 +22,7 @@ export function PersonalView() {
   const [formWeightUnits, setFormWeightUnits] = useState<WeightUnits>("kg");
   const [saving, setSaving] = useState(false);
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const isSynced = useRef(true);
 
   const flushWeight = useCallback(
