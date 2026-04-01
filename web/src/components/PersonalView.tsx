@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "../store";
 import { cn } from "../utils";
 import type { HeightUnits, WeightUnits } from "../types";
+
+const DEBOUNCE_MS = 600;
 
 export function PersonalView() {
   const profile = useStore((s) => s.profile);
@@ -20,12 +22,29 @@ export function PersonalView() {
   const [formWeightUnits, setFormWeightUnits] = useState<WeightUnits>("kg");
   const [saving, setSaving] = useState(false);
 
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const isSynced = useRef(true);
+
+  const flushWeight = useCallback(
+    (value: string, units: WeightUnits) => {
+      clearTimeout(debounceRef.current);
+      const v = parseFloat(value);
+      if (isNaN(v) || v <= 0) return;
+      isSynced.current = false;
+      debounceRef.current = setTimeout(() => {
+        isSynced.current = true;
+        void updateWeight(v, units).catch(() => {});
+      }, DEBOUNCE_MS);
+    },
+    [updateWeight],
+  );
+
   useEffect(() => {
     void refreshProfile();
   }, [refreshProfile]);
 
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || !isSynced.current) return;
     setQuickWeight(String(profile.weight.value));
     setWeightUnits(profile.weight.units);
     setFormAge(String(profile.age));
@@ -34,21 +53,27 @@ export function PersonalView() {
     setFormWeightUnits(profile.weight.units);
   }, [profile]);
 
-  async function handleQuickWeight() {
-    const v = parseFloat(quickWeight);
-    if (isNaN(v) || v <= 0) return;
-    try {
-      await updateWeight(v, weightUnits);
-    } catch {
-      /* error is surfaced via syncError */
-    }
+  useEffect(() => {
+    return () => clearTimeout(debounceRef.current);
+  }, []);
+
+  function handleWeightChange(value: string) {
+    setQuickWeight(value);
+    flushWeight(value, weightUnits);
+  }
+
+  function handleUnitsChange(units: WeightUnits) {
+    setWeightUnits(units);
+    flushWeight(quickWeight, units);
   }
 
   function stepWeight(delta: number) {
     const current = parseFloat(quickWeight) || 0;
     const step = weightUnits === "kg" ? 0.5 : 1;
     const next = Math.max(0, current + delta * step);
-    setQuickWeight(String(parseFloat(next.toFixed(1))));
+    const nextStr = String(parseFloat(next.toFixed(1)));
+    setQuickWeight(nextStr);
+    flushWeight(nextStr, weightUnits);
   }
 
   async function handleSaveDetails() {
@@ -100,20 +125,17 @@ export function PersonalView() {
             −
           </button>
 
-          <div className="relative">
+          <div className="flex items-baseline gap-1.5">
             <input
               type="number"
               inputMode="decimal"
               value={quickWeight}
-              onChange={(e) => setQuickWeight(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void handleQuickWeight();
-              }}
-              className="w-28 text-center text-3xl font-bold text-fg bg-transparent outline-none tabular-nums"
+              onChange={(e) => handleWeightChange(e.target.value)}
+              className="w-24 text-center text-3xl font-bold text-fg bg-transparent outline-none tabular-nums"
               step={weightUnits === "kg" ? 0.5 : 1}
               min={0}
             />
-            <span className="absolute -right-8 bottom-1 text-sm font-medium text-fg-muted">
+            <span className="text-sm font-medium text-fg-muted">
               {weightUnits}
             </span>
           </div>
@@ -128,12 +150,12 @@ export function PersonalView() {
           </button>
         </div>
 
-        <div className="flex items-center justify-center gap-2 mb-4">
+        <div className="flex items-center justify-center gap-2">
           {(["kg", "lbs"] as WeightUnits[]).map((u) => (
             <button
               key={u}
               type="button"
-              onClick={() => setWeightUnits(u)}
+              onClick={() => handleUnitsChange(u)}
               className={cn(
                 "px-3 py-1 rounded-lg text-xs font-medium transition-colors",
                 weightUnits === u
@@ -145,14 +167,6 @@ export function PersonalView() {
             </button>
           ))}
         </div>
-
-        <button
-          type="button"
-          onClick={() => void handleQuickWeight()}
-          className="w-full py-2.5 rounded-xl text-sm font-semibold bg-accent text-white hover:bg-accent-bright transition-colors"
-        >
-          Log Weight
-        </button>
       </section>
 
       {/* Body details */}
