@@ -38,12 +38,32 @@ async fn run() -> anyhow::Result<()> {
         tracing::info!(%url, "CORS enabled for FRONTEND_URL");
     }
 
+    let dev_skip_auth = env::var("DEV_SKIP_AUTH")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    let bot_token = match env::var("TELOXIDE_TOKEN") {
+        Ok(t) if !t.trim().is_empty() => Some(t),
+        _ => {
+            if dev_skip_auth {
+                tracing::warn!(
+                    "DEV_SKIP_AUTH is set: API accepts x-user-id without Telegram initData validation — use only for local development"
+                );
+                None
+            } else {
+                anyhow::bail!(
+                    "TELOXIDE_TOKEN must be set for Telegram Mini App auth (or set DEV_SKIP_AUTH=1 for local dev only)"
+                );
+            }
+        }
+    };
+
     let addr: SocketAddr = env::var("BIND_ADDR")
         .unwrap_or_else(|_| "0.0.0.0:3001".into())
         .parse()
         .context("parse BIND_ADDR")?;
 
-    let app = http_router(dbs, frontend_url.as_deref());
+    let app = http_router(dbs, frontend_url.as_deref(), bot_token, dev_skip_auth);
     let listener = TcpListener::bind(addr)
         .await
         .with_context(|| format!("bind {addr}"))?;

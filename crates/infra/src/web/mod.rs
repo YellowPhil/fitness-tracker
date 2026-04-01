@@ -1,5 +1,6 @@
 pub mod excercise;
 pub mod profile;
+pub mod telegram_auth;
 pub mod workout;
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -8,7 +9,7 @@ use std::path::Path;
 
 use axum::Router;
 use axum::extract::FromRequestParts;
-use axum::http::header::CONTENT_TYPE;
+use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::request::Parts;
 use axum::http::{HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -61,10 +62,23 @@ impl Databases {
     }
 }
 
-pub type AppState = Arc<Mutex<Databases>>;
+/// HTTP-layer state: databases plus Telegram bot token for `initData` validation.
+pub struct InnerState {
+    pub databases: Mutex<Databases>,
+    /// When `Some`, API requires `Authorization: tma <initData>` validated with this token.
+    pub bot_token: Option<String>,
+    /// When `true` and `bot_token` is `None`, accept legacy `x-user-id` (local dev only).
+    pub dev_skip_auth: bool,
+}
 
-pub fn router(dbs: Databases) -> Router<()> {
-    let state: AppState = Arc::new(Mutex::new(dbs));
+pub type AppState = Arc<InnerState>;
+
+pub fn router(dbs: Databases, bot_token: Option<String>, dev_skip_auth: bool) -> Router<()> {
+    let state: AppState = Arc::new(InnerState {
+        databases: Mutex::new(dbs),
+        bot_token,
+        dev_skip_auth,
+    });
 
     Router::new()
         .nest("/api/exercises", excercise::routes())
@@ -77,8 +91,13 @@ pub fn router(dbs: Databases) -> Router<()> {
 ///
 /// When `frontend_url` is set (production: frontend on a different origin), a CORS layer is added
 /// allowing that origin to call the API.
-pub fn http_router(dbs: Databases, frontend_url: Option<&str>) -> Router<()> {
-    let api = router(dbs);
+pub fn http_router(
+    dbs: Databases,
+    frontend_url: Option<&str>,
+    bot_token: Option<String>,
+    dev_skip_auth: bool,
+) -> Router<()> {
+    let api = router(dbs, bot_token, dev_skip_auth);
     let dist = Path::new("web/dist");
 
     let mut router = if dist.join("index.html").exists() {
@@ -106,7 +125,11 @@ pub fn http_router(dbs: Databases, frontend_url: Option<&str>) -> Router<()> {
                 Method::PATCH,
                 Method::DELETE,
             ])
-            .allow_headers([CONTENT_TYPE, HeaderName::from_static("x-user-id")]);
+            .allow_headers([
+                CONTENT_TYPE,
+                AUTHORIZATION,
+                HeaderName::from_static("x-user-id"),
+            ]);
         router = router.layer(cors);
     }
 
@@ -118,19 +141,36 @@ pub struct AuthUser(pub UserId);
 impl FromRequestParts<AppState> for AuthUser {
     type Rejection = ApiError;
 
-    #[instrument(skip(parts, _state))]
+    #[instrument(skip(parts, state))]
     async fn from_request_parts(
         parts: &mut Parts,
-        _state: &AppState,
+        state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let header = parts
-            .headers
-            .get("x-user-id")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse::<i64>().ok())
-            .ok_or(ApiError::Unauthorized)?;
+        if let Some(ref token) = state.bot_token {
+            let init_data = parts
+                .headers
+                .get(AUTHORIZATION)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.strip_prefix("tma "))
+                .ok_or(ApiError::Unauthorized)?;
 
-        Ok(AuthUser(UserId::new(header)))
+            let tg_user = telegram_auth::validate_init_data_default(init_data, token)
+                .map_err(|_| ApiError::Unauthorized)?;
+
+            return Ok(AuthUser(UserId::new(tg_user.id)));
+        }
+
+        if state.dev_skip_auth {
+            let id = parts
+                .headers
+                .get("x-user-id")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<i64>().ok())
+                .ok_or(ApiError::Unauthorized)?;
+            return Ok(AuthUser(UserId::new(id)));
+        }
+
+        Err(ApiError::Unauthorized)
     }
 }
 
@@ -158,7 +198,7 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, msg) = match self {
             Self::Unauthorized => {
-                warn!("responding unauthorized (missing or invalid x-user-id)");
+                warn!("responding unauthorized (missing or invalid Telegram initData / credentials)");
                 (StatusCode::UNAUTHORIZED, "unauthorized")
             }
             Self::NotFound => {
@@ -181,5 +221,5 @@ impl<T> From<PoisonError<T>> for ApiError {
 }
 
 pub fn lock_dbs(state: &AppState) -> Result<MutexGuard<'_, Databases>, ApiError> {
-    state.lock().map_err(ApiError::from)
+    state.databases.lock().map_err(ApiError::from)
 }
