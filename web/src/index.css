@@ -83,6 +83,11 @@ body {
   overscroll-behavior-y: none;
 }
 
+/* Telegram Mini App: `telegram.ts` sets --color-* from `themeParams` at runtime. */
+body.telegram-mini-app {
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none;

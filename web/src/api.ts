@@ -10,16 +10,25 @@ import type {
   Workout,
   WorkoutExercise,
 } from "./types";
+import { getInitData } from "./telegram";
 import { toDateString } from "./utils";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
-const USER_ID = import.meta.env.VITE_USER_ID ?? "1";
+
+/** When not in Telegram, use `x-user-id` (backend must run with `DEV_SKIP_AUTH=1`). */
+const DEV_USER_ID = import.meta.env.VITE_DEV_USER_ID ?? "1";
 
 function headers(): HeadersInit {
-  return {
+  const h: Record<string, string> = {
     "Content-Type": "application/json",
-    "x-user-id": USER_ID,
   };
+  const initData = getInitData();
+  if (initData) {
+    h.Authorization = `tma ${initData}`;
+  } else {
+    h["x-user-id"] = DEV_USER_ID;
+  }
+  return h;
 }
 
 async function parseError(res: Response): Promise<string> {
