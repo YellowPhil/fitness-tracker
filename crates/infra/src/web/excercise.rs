@@ -64,6 +64,7 @@ fn parse_muscle_group(s: &str) -> Result<MuscleGroup, ApiError> {
     match s.to_lowercase().as_str() {
         "chest" => Ok(MuscleGroup::Chest),
         "back" => Ok(MuscleGroup::Back),
+        "shoulders" => Ok(MuscleGroup::Shoulders),
         "arms" => Ok(MuscleGroup::Arms),
         "legs" => Ok(MuscleGroup::Legs),
         "core" => Ok(MuscleGroup::Core),
@@ -90,6 +91,7 @@ async fn list_exercises(
 ) -> Result<Json<Vec<ExcerciseResponse>>, ApiError> {
     let dbs = lock_dbs(&state)?;
     let app = dbs.gym_app(user.0);
+    app.seed_built_in_excercises().map_err(ApiError::internal)?;
     let exercises = app.get_all_excercises().map_err(ApiError::internal)?;
 
     Ok(Json(exercises.into_iter().map(Into::into).collect()))

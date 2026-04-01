@@ -1,3 +1,4 @@
+pub mod catalog;
 mod excercise;
 mod muscle_group;
 mod repetitions;

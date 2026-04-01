@@ -91,6 +91,7 @@ impl ToSql for MuscleGroup {
             MuscleGroup::Arms => 3,
             MuscleGroup::Legs => 4,
             MuscleGroup::Core => 5,
+            MuscleGroup::Shoulders => 6,
         };
         Ok(v.into())
     }
@@ -104,6 +105,7 @@ impl FromSql for MuscleGroup {
             3 => Ok(MuscleGroup::Arms),
             4 => Ok(MuscleGroup::Legs),
             5 => Ok(MuscleGroup::Core),
+            6 => Ok(MuscleGroup::Shoulders),
             other => Err(FromSqlError::OutOfRange(other)),
         }
     }

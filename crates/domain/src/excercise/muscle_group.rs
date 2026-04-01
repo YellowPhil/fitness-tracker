@@ -4,6 +4,8 @@ pub enum MuscleGroup {
     Chest,
     #[strum(serialize = "Back")]
     Back,
+    #[strum(serialize = "Shoulders")]
+    Shoulders,
     #[strum(serialize = "Arms")]
     Arms,
     #[strum(serialize = "Legs")]

@@ -1,11 +1,12 @@
 export type WeightUnits = "kg" | "lbs";
-export type MuscleGroup = "Chest" | "Back" | "Arms" | "Legs" | "Core";
+export type MuscleGroup = "Chest" | "Back" | "Shoulders" | "Arms" | "Legs" | "Core";
 export type ExerciseSource = "BuiltIn" | "UserDefined";
 export type ExerciseKind = "Weighted" | "BodyWeight";
 
 export const MUSCLE_GROUPS: MuscleGroup[] = [
   "Chest",
   "Back",
+  "Shoulders",
   "Arms",
   "Legs",
   "Core",

@@ -102,7 +102,7 @@ interface ApiExercise {
   source: string;
 }
 
-const MUSCLE: MuscleGroup[] = ["Chest", "Back", "Arms", "Legs", "Core"];
+const MUSCLE: MuscleGroup[] = ["Chest", "Back", "Shoulders", "Arms", "Legs", "Core"];
 
 function mapMuscleGroup(s: string): MuscleGroup {
   if (MUSCLE.includes(s as MuscleGroup)) return s as MuscleGroup;
