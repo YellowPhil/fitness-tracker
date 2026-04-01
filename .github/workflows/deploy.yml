@@ -1,8 +1,8 @@
-name: Deploy Production
+name: Deploy to Coolify
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
 
 jobs:
   deploy-backend:
