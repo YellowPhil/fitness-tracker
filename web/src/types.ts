@@ -47,3 +47,11 @@ export interface Workout {
   endDate?: string;
   entries: WorkoutExercise[];
 }
+
+export type HeightUnits = "cm" | "in";
+
+export interface UserProfile {
+  weight: Weight;
+  height: { value: number; units: HeightUnits };
+  age: number;
+}

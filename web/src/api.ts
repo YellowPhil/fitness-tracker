@@ -2,8 +2,10 @@ import type {
   Exercise,
   ExerciseKind,
   ExerciseSource,
+  HeightUnits,
   MuscleGroup,
   PerformedSet,
+  UserProfile,
   WeightUnits,
   Workout,
   WorkoutExercise,
@@ -309,4 +311,62 @@ export async function removeSetApi(
     `/api/workouts/${encodeURIComponent(workoutId)}/exercises/${encodeURIComponent(exerciseId)}/sets/${setIndex}`,
     { method: "DELETE" },
   );
+}
+
+// --- Profile / Health ---
+
+interface ApiProfile {
+  weight_value: number;
+  weight_units: string;
+  height_value: number;
+  height_units: string;
+  age: number;
+}
+
+function mapProfileFromApi(p: ApiProfile): UserProfile {
+  const wu = p.weight_units.toLowerCase();
+  const hu = p.height_units.toLowerCase();
+  return {
+    weight: {
+      value: p.weight_value,
+      units: wu === "lbs" || wu === "pounds" ? "lbs" : "kg",
+    },
+    height: {
+      value: p.height_value,
+      units: (hu === "in" || hu === "inches" ? "in" : "cm") as HeightUnits,
+    },
+    age: p.age,
+  };
+}
+
+export async function getProfile(): Promise<UserProfile> {
+  const p = await apiFetch<ApiProfile>("/api/profile");
+  return mapProfileFromApi(p);
+}
+
+export async function updateProfile(
+  profile: UserProfile,
+): Promise<UserProfile> {
+  const p = await apiFetch<ApiProfile>("/api/profile", {
+    method: "PUT",
+    body: JSON.stringify({
+      weight_value: profile.weight.value,
+      weight_units: profile.weight.units,
+      height_value: profile.height.value,
+      height_units: profile.height.units,
+      age: profile.age,
+    }),
+  });
+  return mapProfileFromApi(p);
+}
+
+export async function updateWeight(
+  value: number,
+  units: WeightUnits,
+): Promise<UserProfile> {
+  const p = await apiFetch<ApiProfile>("/api/profile/weight", {
+    method: "PATCH",
+    body: JSON.stringify({ value, units }),
+  });
+  return mapProfileFromApi(p);
 }

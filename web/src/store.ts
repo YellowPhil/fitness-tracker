@@ -6,9 +6,13 @@ import type {
   ExerciseKind,
   MuscleGroup,
   PerformedSet,
+  UserProfile,
+  WeightUnits,
   Workout,
 } from "./types";
 import { toDateString } from "./utils";
+
+type ViewId = "calendar" | "exercises" | "personal";
 
 interface GymStore {
   exercises: Exercise[];
@@ -16,9 +20,12 @@ interface GymStore {
   /** Dates (YYYY-MM-DD) that have at least one workout — for calendar dots */
   calendarWorkoutDates: string[];
   selectedDate: string;
-  currentView: "calendar" | "exercises";
+  currentView: ViewId;
   calendarViewYear: number;
   calendarViewMonth: number;
+
+  profile: UserProfile | null;
+  profileLoading: boolean;
 
   syncError: string | null;
   isLoading: boolean;
@@ -32,7 +39,7 @@ interface GymStore {
   fetchCalendarDatesForMonth: (year: number, month: number) => Promise<void>;
 
   setSelectedDate: (date: string) => void;
-  setCurrentView: (view: "calendar" | "exercises") => void;
+  setCurrentView: (view: ViewId) => void;
 
   addExercise: (
     name: string,
@@ -54,6 +61,10 @@ interface GymStore {
     exerciseId: string,
     setIndex: number,
   ) => Promise<void>;
+
+  refreshProfile: () => Promise<void>;
+  updateProfile: (profile: UserProfile) => Promise<void>;
+  updateWeight: (value: number, units: WeightUnits) => Promise<void>;
 }
 
 async function afterWorkoutMutation(get: () => GymStore) {
@@ -74,6 +85,9 @@ export const useStore = create<GymStore>()(
       currentView: "calendar",
       calendarViewYear: new Date().getFullYear(),
       calendarViewMonth: new Date().getMonth(),
+
+      profile: null,
+      profileLoading: false,
 
       syncError: null,
       isLoading: true,
@@ -243,6 +257,41 @@ export const useStore = create<GymStore>()(
         try {
           await api.removeSetApi(workoutId, exerciseId, setIndex);
           await get().refreshWorkouts();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+          throw e;
+        }
+      },
+
+      refreshProfile: async () => {
+        set({ profileLoading: true });
+        try {
+          const profile = await api.getProfile();
+          set({ profile });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+        } finally {
+          set({ profileLoading: false });
+        }
+      },
+
+      updateProfile: async (profile) => {
+        try {
+          const updated = await api.updateProfile(profile);
+          set({ profile: updated });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+          throw e;
+        }
+      },
+
+      updateWeight: async (value, units) => {
+        try {
+          const updated = await api.updateWeight(value, units);
+          set({ profile: updated });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           set({ syncError: msg });

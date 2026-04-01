@@ -1,4 +1,5 @@
 pub mod excercise;
+pub mod profile;
 pub mod workout;
 
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -15,18 +16,27 @@ use axum::response::{IntoResponse, Response};
 use domain::types::UserId;
 use tracing::{debug, error, instrument, warn};
 
-use crate::{SqliteExcerciseDb, SqliteExcerciseRepo, SqliteWorkoutDb, SqliteWorkoutRepo};
+use crate::{
+    SqliteExcerciseDb, SqliteExcerciseRepo, SqliteHealthDb, SqliteHealthRepo, SqliteWorkoutDb,
+    SqliteWorkoutRepo,
+};
 
 pub struct Databases {
     pub exercise_db: SqliteExcerciseDb,
     pub workout_db: SqliteWorkoutDb,
+    pub health_db: SqliteHealthDb,
 }
 
 impl Databases {
-    pub fn new(exercise_db: SqliteExcerciseDb, workout_db: SqliteWorkoutDb) -> Self {
+    pub fn new(
+        exercise_db: SqliteExcerciseDb,
+        workout_db: SqliteWorkoutDb,
+        health_db: SqliteHealthDb,
+    ) -> Self {
         Self {
             exercise_db,
             workout_db,
+            health_db,
         }
     }
 
@@ -39,6 +49,13 @@ impl Databases {
             self.workout_db.for_user(user_id),
         )
     }
+
+    pub fn health_app(
+        &self,
+        user_id: UserId,
+    ) -> application::HealthApp<SqliteHealthRepo<'_>> {
+        application::HealthApp::new(self.health_db.for_user(user_id))
+    }
 }
 
 pub type AppState = Arc<Mutex<Databases>>;
@@ -49,6 +66,7 @@ pub fn router(dbs: Databases) -> Router<()> {
     Router::new()
         .nest("/api/exercises", excercise::routes())
         .nest("/api/workouts", workout::routes())
+        .nest("/api/profile", profile::routes())
         .with_state(state)
 }
 
