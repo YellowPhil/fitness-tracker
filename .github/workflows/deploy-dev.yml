@@ -1,0 +1,14 @@
+name: Deploy Dev
+
+on:
+  push:
+    branches: [dev]
+
+jobs:
+  deploy:
+    name: Trigger Coolify dev deployment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via Coolify webhook
+        run: |
+          curl -sf "${{ secrets.COOLIFY_WEBHOOK_DEV }}" || true
