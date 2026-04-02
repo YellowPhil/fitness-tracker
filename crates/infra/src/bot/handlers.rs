@@ -34,7 +34,7 @@ pub async fn handle_command(
             )]]);
             bot.send_message(
                 msg.chat.id,
-                "🏋 <b>Fitness tracker</b>\n\n\
+                "<b>Fitness tracker</b>\n\n\
                  Tap the button below to open the app in Telegram (calendar, workouts, sets, custom exercises).",
             )
             .parse_mode(ParseMode::Html)
@@ -54,14 +54,10 @@ pub async fn handle_command(
 
 #[instrument(skip(bot, msg), err)]
 pub async fn handle_generic_message(bot: Bot, msg: Message) -> HandlerResult {
-    bot.send_message(
-        msg.chat.id,
-        "Use /start to open the fitness web app.",
-    )
-    .await?;
+    bot.send_message(msg.chat.id, "Use /start to open the fitness web app.")
+        .await?;
     Ok(())
 }
 
-/// Injected dependency: public `https://…` URL where the web UI is served.
 #[derive(Clone)]
 pub struct WebAppPublicUrl(pub String);
