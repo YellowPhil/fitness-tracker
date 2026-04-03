@@ -2,7 +2,7 @@
 # Frontend is deployed separately to Cloudflare Pages.
 #
 # Required env vars:
-#   BIND_ADDR, FRONTEND_URL, BACKEND_URL, TELOXIDE_TOKEN
+#   BIND_ADDR, FRONTEND_URL, BACKEND_URL, TELOXIDE_TOKEN, POSTGRES_URL
 # Optional:
 #   RUST_LOG (default: info)
 
@@ -16,12 +16,8 @@ services:
       - BIND_ADDR=${BIND_ADDR:?Set BIND_ADDR}
       - FRONTEND_URL=${FRONTEND_URL:?Set FRONTEND_URL}
       - TELOXIDE_TOKEN=${TELOXIDE_TOKEN:?Set TELOXIDE_TOKEN}
-      - FITNESS_EXERCISE_DB=/data/exercises.db
-      - FITNESS_WORKOUT_DB=/data/workouts.db
-      - FITNESS_HEALTH_DB=/data/health.db
+      - POSTGRES_URL=${POSTGRES_URL:?Set POSTGRES_URL}
       - RUST_LOG=${RUST_LOG:-info}
-    volumes:
-      - fitness-data:/data
     restart: unless-stopped
 
   bot:
@@ -38,5 +34,3 @@ services:
       backend:
         condition: service_healthy
 
-volumes:
-  fitness-data:

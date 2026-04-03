@@ -6,6 +6,7 @@
 # Optional:
 #   BIND_ADDR (default: 0.0.0.0:3001)
 #   FRONTEND_URL (default: unset — same-origin, no CORS needed)
+#   POSTGRES_URL
 #   RUST_LOG (default: debug)
 
 services:
@@ -18,12 +19,8 @@ services:
       - BIND_ADDR=${BIND_ADDR:-0.0.0.0:3001}
       - FRONTEND_URL=${FRONTEND_URL:-}
       - TELOXIDE_TOKEN=${TELOXIDE_TOKEN:?Set TELOXIDE_TOKEN}
-      - FITNESS_EXERCISE_DB=/data/exercises.db
-      - FITNESS_WORKOUT_DB=/data/workouts.db
-      - FITNESS_HEALTH_DB=/data/health.db
+      - POSTGRES_URL=${POSTGRES_URL:?Set POSTGRES_URL}
       - RUST_LOG=${RUST_LOG:-debug}
-    volumes:
-      - fitness-data:/data
     restart: unless-stopped
 
   bot:
@@ -40,5 +37,3 @@ services:
       app:
         condition: service_healthy
 
-volumes:
-  fitness-data:

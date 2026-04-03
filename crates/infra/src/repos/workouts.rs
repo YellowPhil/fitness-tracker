@@ -1,108 +1,80 @@
-use std::path::Path;
+use std::sync::{MutexGuard, PoisonError};
 
 use domain::{
     excercise::{ExerciseId, LoadType, PerformedSet, Workout, WorkoutExercise, WorkoutId},
     traits::WorkoutRepo,
     types::{UserId, Weight, WeightUnits},
 };
-use rusqlite::{Connection, OptionalExtension, params};
+use postgres::{Client, Row};
 use time::{Date, OffsetDateTime};
 
+use super::{
+    postgres::{SharedClient, connect},
+    postgres_types::{PgLoadType, PgWeightUnits},
+};
+
 #[derive(Debug, thiserror::Error)]
-pub enum SqliteWorkoutRepoError {
-    #[error("sqlite error: {0}")]
-    Sqlite(#[from] rusqlite::Error),
-    #[error("invalid load type: {0}")]
-    InvalidLoadType(i64),
-    #[error("missing weight for weighted set")]
+pub enum PostgresWorkoutRepoError {
+    #[error("postgres error: {0}")]
+    Postgres(#[from] postgres::Error),
+    #[error("postgres connection lock poisoned")]
+    ConnectionPoisoned,
+    #[error("weighted set missing weight value")]
     MissingWeightForWeightedSet,
-    #[error("missing weight units for weighted set")]
+    #[error("weighted set missing weight units")]
     MissingWeightUnitsForWeightedSet,
-    #[error("invalid date string from database: {0}")]
-    InvalidDateString(String),
+    #[error("invalid reps value from database: {0}")]
+    InvalidReps(i32),
+    #[error("value for {field} exceeds supported range: {value}")]
+    ValueOutOfRange { field: &'static str, value: usize },
+    #[error("count for {field} exceeds supported range: {value}")]
+    CountOutOfRange { field: &'static str, value: i64 },
 }
 
-pub struct SqliteWorkoutDb {
-    connection: Connection,
+pub struct PostgresWorkoutDb {
+    client: SharedClient,
 }
 
-pub struct SqliteWorkoutRepo<'db> {
-    connection: &'db Connection,
+pub struct PostgresWorkoutRepo<'db> {
+    client: &'db SharedClient,
     user_id: UserId,
 }
 
-impl SqliteWorkoutDb {
-    pub fn open(path: impl AsRef<Path>) -> Result<Self, SqliteWorkoutRepoError> {
-        let connection = Connection::open(path)?;
-        Self::init_schema(&connection)?;
-        Ok(Self { connection })
+impl PostgresWorkoutDb {
+    pub fn open(url: &str) -> Result<Self, PostgresWorkoutRepoError> {
+        Ok(Self {
+            client: connect(url)?,
+        })
     }
 
-    pub fn in_memory() -> Result<Self, SqliteWorkoutRepoError> {
-        let connection = Connection::open_in_memory()?;
-        Self::init_schema(&connection)?;
-        Ok(Self { connection })
+    pub(crate) fn new(client: SharedClient) -> Self {
+        Self { client }
     }
 
-    pub fn for_user(&self, user_id: UserId) -> SqliteWorkoutRepo<'_> {
-        SqliteWorkoutRepo {
-            connection: &self.connection,
+    pub fn for_user(&self, user_id: UserId) -> PostgresWorkoutRepo<'_> {
+        PostgresWorkoutRepo {
+            client: &self.client,
             user_id,
         }
     }
-
-    fn init_schema(connection: &Connection) -> Result<(), SqliteWorkoutRepoError> {
-        connection.execute_batch(
-            "
-            PRAGMA foreign_keys = ON;
-
-            CREATE TABLE IF NOT EXISTS workouts (
-                id TEXT NOT NULL,
-                user_id INTEGER NOT NULL,
-                name TEXT,
-                start_date TEXT NOT NULL,
-                end_date TEXT,
-                PRIMARY KEY (id, user_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS workout_exercises (
-                workout_id TEXT NOT NULL,
-                user_id INTEGER NOT NULL,
-                excercise_id TEXT NOT NULL,
-                entry_order INTEGER NOT NULL,
-                notes TEXT,
-                PRIMARY KEY (workout_id, user_id, excercise_id),
-                FOREIGN KEY (workout_id, user_id) REFERENCES workouts(id, user_id) ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS performed_sets (
-                workout_id TEXT NOT NULL,
-                user_id INTEGER NOT NULL,
-                excercise_id TEXT NOT NULL,
-                set_order INTEGER NOT NULL,
-                reps INTEGER NOT NULL,
-                load_type INTEGER NOT NULL,
-                weight REAL,
-                weight_units INTEGER,
-                PRIMARY KEY (workout_id, user_id, excercise_id, set_order),
-                FOREIGN KEY (workout_id, user_id, excercise_id)
-                    REFERENCES workout_exercises(workout_id, user_id, excercise_id)
-                    ON DELETE CASCADE
-            );
-            ",
-        )?;
-        Ok(())
-    }
 }
 
-impl SqliteWorkoutRepo<'_> {
+impl PostgresWorkoutRepo<'_> {
+    fn client(&self) -> Result<MutexGuard<'_, Client>, PostgresWorkoutRepoError> {
+        self.client
+            .lock()
+            .map_err(|_: PoisonError<MutexGuard<'_, Client>>| {
+                PostgresWorkoutRepoError::ConnectionPoisoned
+            })
+    }
+
     fn build_workout(
         &self,
         id: WorkoutId,
         name: Option<String>,
         start_date: OffsetDateTime,
         end_date: Option<OffsetDateTime>,
-    ) -> Result<Workout, SqliteWorkoutRepoError> {
+    ) -> Result<Workout, PostgresWorkoutRepoError> {
         Ok(Workout {
             entries: self.load_workout_entries(&id)?,
             id,
@@ -115,28 +87,24 @@ impl SqliteWorkoutRepo<'_> {
     fn load_workout_entries(
         &self,
         workout_id: &WorkoutId,
-    ) -> Result<Vec<WorkoutExercise>, SqliteWorkoutRepoError> {
-        let mut stmt = self.connection.prepare(
-            "SELECT excercise_id, notes
+    ) -> Result<Vec<WorkoutExercise>, PostgresWorkoutRepoError> {
+        let mut client = self.client()?;
+        let rows = client.query(
+            "SELECT exercise_id, notes
              FROM workout_exercises
-             WHERE workout_id = ?1 AND user_id = ?2
+             WHERE workout_id = $1 AND user_id = $2
              ORDER BY entry_order ASC",
+            &[workout_id.as_uuid(), &self.user_id.as_i64()],
         )?;
+        drop(client);
 
-        let rows = stmt.query_map(params![workout_id, self.user_id], |row| {
-            Ok((
-                row.get::<_, ExerciseId>(0)?,
-                row.get::<_, Option<String>>(1)?,
-            ))
-        })?;
-
-        rows.collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .map(|(excercise_id, notes)| {
+        rows.into_iter()
+            .map(|row| {
+                let exercise_id = ExerciseId::from_uuid(row.get("exercise_id"));
                 Ok(WorkoutExercise {
-                    sets: self.load_performed_sets(workout_id, &excercise_id)?,
-                    exercise_id: excercise_id,
-                    notes,
+                    sets: self.load_performed_sets(workout_id, &exercise_id)?,
+                    exercise_id,
+                    notes: row.get("notes"),
                 })
             })
             .collect()
@@ -145,128 +113,137 @@ impl SqliteWorkoutRepo<'_> {
     fn load_performed_sets(
         &self,
         workout_id: &WorkoutId,
-        excercise_id: &ExerciseId,
-    ) -> Result<Vec<PerformedSet>, SqliteWorkoutRepoError> {
-        let mut stmt = self.connection.prepare(
-            "SELECT reps, load_type, weight, weight_units
+        exercise_id: &ExerciseId,
+    ) -> Result<Vec<PerformedSet>, PostgresWorkoutRepoError> {
+        let mut client = self.client()?;
+        let rows = client.query(
+            "SELECT reps, load_type, weight_value, weight_units
              FROM performed_sets
-             WHERE workout_id = ?1 AND user_id = ?2 AND excercise_id = ?3
+             WHERE workout_id = $1 AND user_id = $2 AND exercise_id = $3
              ORDER BY set_order ASC",
+            &[workout_id.as_uuid(), &self.user_id.as_i64(), exercise_id.as_uuid()],
         )?;
 
-        let rows = stmt.query_map(params![workout_id, self.user_id, excercise_id], |row| {
-            Ok((
-                row.get::<_, u32>(0)?,
-                row.get::<_, i64>(1)?,
-                row.get::<_, Option<f64>>(2)?,
-                row.get::<_, Option<WeightUnits>>(3)?,
-            ))
-        })?;
-
-        rows.collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .map(|(reps, load_type, weight, weight_units)| {
-                Ok(PerformedSet {
-                    reps,
-                    kind: decode_load_type(load_type, weight, weight_units)?,
-                })
-            })
+        rows.into_iter()
+            .map(stored_set_from_row)
+            .map(|result| result.and_then(StoredSet::into_domain))
             .collect()
     }
 }
 
-impl WorkoutRepo for SqliteWorkoutRepo<'_> {
-    type RepoError = SqliteWorkoutRepoError;
+impl WorkoutRepo for PostgresWorkoutRepo<'_> {
+    type RepoError = PostgresWorkoutRepoError;
 
     fn get_all(&self) -> Result<Vec<Workout>, Self::RepoError> {
-        let mut stmt = self.connection.prepare(
+        let mut client = self.client()?;
+        let rows = client.query(
             "SELECT id, name, start_date, end_date
              FROM workouts
-             WHERE user_id = ?1
+             WHERE user_id = $1
              ORDER BY start_date DESC",
+            &[&self.user_id.as_i64()],
         )?;
+        drop(client);
 
-        let rows = stmt.query_map(params![self.user_id], |row| {
-            Ok((
-                row.get::<_, WorkoutId>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, OffsetDateTime>(2)?,
-                row.get::<_, Option<OffsetDateTime>>(3)?,
-            ))
-        })?;
-
-        rows.collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .map(|(id, name, sd, ed)| self.build_workout(id, name, sd, ed))
+        rows.into_iter()
+            .map(workout_header_from_row)
+            .map(|result| {
+                result.and_then(|(id, name, start_date, end_date)| {
+                    self.build_workout(id, name, start_date, end_date)
+                })
+            })
             .collect()
     }
 
     fn get_by_id(&self, id: &WorkoutId) -> Result<Option<Workout>, Self::RepoError> {
-        let mut stmt = self.connection.prepare(
+        let mut client = self.client()?;
+        let row = client.query_opt(
             "SELECT id, name, start_date, end_date
              FROM workouts
-             WHERE id = ?1 AND user_id = ?2",
+             WHERE id = $1 AND user_id = $2",
+            &[id.as_uuid(), &self.user_id.as_i64()],
         )?;
+        drop(client);
 
-        let row = stmt
-            .query_row(params![id, self.user_id], |row| {
-                Ok((
-                    row.get::<_, WorkoutId>(0)?,
-                    row.get::<_, Option<String>>(1)?,
-                    row.get::<_, OffsetDateTime>(2)?,
-                    row.get::<_, Option<OffsetDateTime>>(3)?,
-                ))
-            })
-            .optional()?;
-
-        row.map(|(id, name, sd, ed)| self.build_workout(id, name, sd, ed))
+        row.map(workout_header_from_row)
+            .transpose()?
+            .map(|(id, name, start_date, end_date)| self.build_workout(id, name, start_date, end_date))
             .transpose()
     }
 
     fn save(&self, workout: &Workout) -> Result<(), Self::RepoError> {
-        self.connection.execute(
+        let mut client = self.client()?;
+        let mut tx = client.transaction()?;
+
+        tx.execute(
             "INSERT INTO workouts (id, user_id, name, start_date, end_date)
-             VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(id, user_id) DO UPDATE SET
-                 name = excluded.name,
-                 start_date = excluded.start_date,
-                 end_date = excluded.end_date",
-            params![
-                workout.id,
-                self.user_id,
-                workout.name,
-                workout.start_date,
-                workout.end_date,
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (id, user_id) DO UPDATE SET
+                name = EXCLUDED.name,
+                start_date = EXCLUDED.start_date,
+                end_date = EXCLUDED.end_date",
+            &[
+                workout.id.as_uuid(),
+                &self.user_id.as_i64(),
+                &workout.name,
+                &workout.start_date,
+                &workout.end_date,
             ],
         )?;
 
-        self.connection.execute(
-            "DELETE FROM performed_sets WHERE workout_id = ?1 AND user_id = ?2",
-            params![workout.id, self.user_id],
+        tx.execute(
+            "DELETE FROM performed_sets WHERE workout_id = $1 AND user_id = $2",
+            &[workout.id.as_uuid(), &self.user_id.as_i64()],
         )?;
-        self.connection.execute(
-            "DELETE FROM workout_exercises WHERE workout_id = ?1 AND user_id = ?2",
-            params![workout.id, self.user_id],
+        tx.execute(
+            "DELETE FROM workout_exercises WHERE workout_id = $1 AND user_id = $2",
+            &[workout.id.as_uuid(), &self.user_id.as_i64()],
         )?;
 
-        for (i, entry) in workout.entries.iter().enumerate() {
-            self.connection.execute(
-                "INSERT INTO workout_exercises (workout_id, user_id, excercise_id, entry_order, notes)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                params![workout.id, self.user_id, entry.exercise_id, i as i64, entry.notes],
+        for (entry_order, entry) in workout.entries.iter().enumerate() {
+            let entry_order = to_i32(entry_order, "entry_order")?;
+            tx.execute(
+                "INSERT INTO workout_exercises (workout_id, user_id, exercise_id, entry_order, notes)
+                 VALUES ($1, $2, $3, $4, $5)",
+                &[
+                    workout.id.as_uuid(),
+                    &self.user_id.as_i64(),
+                    entry.exercise_id.as_uuid(),
+                    &entry_order,
+                    &entry.notes,
+                ],
             )?;
 
-            for (j, set) in entry.sets.iter().enumerate() {
-                let (lt, w, wu) = encode_load_type(&set.kind);
-                self.connection.execute(
-                    "INSERT INTO performed_sets
-                     (workout_id, user_id, excercise_id, set_order, reps, load_type, weight, weight_units)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                    params![workout.id, self.user_id, entry.exercise_id, j as i64, set.reps, lt, w, wu],
+            for (set_order, set) in entry.sets.iter().enumerate() {
+                let stored = StoredSet::from_domain(set)?;
+                let set_order = to_i32(set_order, "set_order")?;
+                tx.execute(
+                    "INSERT INTO performed_sets (
+                        workout_id,
+                        user_id,
+                        exercise_id,
+                        set_order,
+                        reps,
+                        load_type,
+                        weight_value,
+                        weight_units
+                     )
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                    &[
+                        workout.id.as_uuid(),
+                        &self.user_id.as_i64(),
+                        entry.exercise_id.as_uuid(),
+                        &set_order,
+                        &stored.reps,
+                        &stored.load_type,
+                        &stored.weight_value,
+                        &stored.weight_units,
+                    ],
                 )?;
             }
         }
 
+        tx.commit()?;
         Ok(())
     }
 
@@ -275,34 +252,56 @@ impl WorkoutRepo for SqliteWorkoutRepo<'_> {
         workout_id: &WorkoutId,
         exercise: &WorkoutExercise,
     ) -> Result<(), Self::RepoError> {
-        let entry_order: i64 = self.connection.query_row(
-            "SELECT COUNT(*) FROM workout_exercises WHERE workout_id = ?1 AND user_id = ?2",
-            params![workout_id, self.user_id],
-            |row| row.get(0),
-        )?;
+        let mut client = self.client()?;
+        let mut tx = client.transaction()?;
+        let entry_order: i64 = tx.query_one(
+            "SELECT COUNT(*) FROM workout_exercises WHERE workout_id = $1 AND user_id = $2",
+            &[workout_id.as_uuid(), &self.user_id.as_i64()],
+        )?
+        .get(0);
+        let entry_order = count_to_i32(entry_order, "entry_order")?;
 
-        self.connection.execute(
-            "INSERT INTO workout_exercises (workout_id, user_id, excercise_id, entry_order, notes)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                workout_id,
-                self.user_id,
-                exercise.exercise_id,
-                entry_order,
-                exercise.notes
+        tx.execute(
+            "INSERT INTO workout_exercises (workout_id, user_id, exercise_id, entry_order, notes)
+             VALUES ($1, $2, $3, $4, $5)",
+            &[
+                workout_id.as_uuid(),
+                &self.user_id.as_i64(),
+                exercise.exercise_id.as_uuid(),
+                &entry_order,
+                &exercise.notes,
             ],
         )?;
 
-        for (j, set) in exercise.sets.iter().enumerate() {
-            let (lt, w, wu) = encode_load_type(&set.kind);
-            self.connection.execute(
-                "INSERT INTO performed_sets
-                 (workout_id, user_id, excercise_id, set_order, reps, load_type, weight, weight_units)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                params![workout_id, self.user_id, exercise.exercise_id, j as i64, set.reps, lt, w, wu],
+        for (set_order, set) in exercise.sets.iter().enumerate() {
+            let stored = StoredSet::from_domain(set)?;
+            let set_order = to_i32(set_order, "set_order")?;
+            tx.execute(
+                "INSERT INTO performed_sets (
+                    workout_id,
+                    user_id,
+                    exercise_id,
+                    set_order,
+                    reps,
+                    load_type,
+                    weight_value,
+                    weight_units
+                 )
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                &[
+                    workout_id.as_uuid(),
+                    &self.user_id.as_i64(),
+                    exercise.exercise_id.as_uuid(),
+                    &set_order,
+                    &stored.reps,
+                    &stored.load_type,
+                    &stored.weight_value,
+                    &stored.weight_units,
+                ],
             )?;
         }
 
+        tx.commit()?;
         Ok(())
     }
 
@@ -312,126 +311,120 @@ impl WorkoutRepo for SqliteWorkoutRepo<'_> {
         exercise_id: &ExerciseId,
         set: &PerformedSet,
     ) -> Result<(), Self::RepoError> {
-        let set_order: i64 = self.connection.query_row(
-            "SELECT COUNT(*) FROM performed_sets
-             WHERE workout_id = ?1 AND user_id = ?2 AND excercise_id = ?3",
-            params![workout_id, self.user_id, exercise_id],
-            |row| row.get(0),
-        )?;
+        let stored = StoredSet::from_domain(set)?;
+        let mut client = self.client()?;
+        let set_order: i64 = client
+            .query_one(
+                "SELECT COUNT(*) FROM performed_sets
+                 WHERE workout_id = $1 AND user_id = $2 AND exercise_id = $3",
+                &[workout_id.as_uuid(), &self.user_id.as_i64(), exercise_id.as_uuid()],
+            )?
+            .get(0);
+        let set_order = count_to_i32(set_order, "set_order")?;
 
-        let (lt, w, wu) = encode_load_type(&set.kind);
-        self.connection.execute(
-            "INSERT INTO performed_sets
-             (workout_id, user_id, excercise_id, set_order, reps, load_type, weight, weight_units)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![
+        client.execute(
+            "INSERT INTO performed_sets (
                 workout_id,
-                self.user_id,
+                user_id,
                 exercise_id,
                 set_order,
-                set.reps,
-                lt,
-                w,
-                wu
+                reps,
+                load_type,
+                weight_value,
+                weight_units
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            &[
+                workout_id.as_uuid(),
+                &self.user_id.as_i64(),
+                exercise_id.as_uuid(),
+                &set_order,
+                &stored.reps,
+                &stored.load_type,
+                &stored.weight_value,
+                &stored.weight_units,
             ],
         )?;
 
         Ok(())
     }
 
-    fn get_latest(&self) -> Result<Option<Workout>, Self::RepoError> {
-        let mut stmt = self.connection.prepare(
+    fn get_by_date(&self, date: Date) -> Result<Vec<Workout>, Self::RepoError> {
+        let mut client = self.client()?;
+        let rows = client.query(
             "SELECT id, name, start_date, end_date
              FROM workouts
-             WHERE user_id = ?1
+             WHERE user_id = $1 AND start_date::date = $2
+             ORDER BY start_date DESC",
+            &[&self.user_id.as_i64(), &date],
+        )?;
+        drop(client);
+
+        rows.into_iter()
+            .map(workout_header_from_row)
+            .map(|result| {
+                result.and_then(|(id, name, start_date, end_date)| {
+                    self.build_workout(id, name, start_date, end_date)
+                })
+            })
+            .collect()
+    }
+
+    fn get_latest(&self) -> Result<Option<Workout>, Self::RepoError> {
+        let mut client = self.client()?;
+        let row = client.query_opt(
+            "SELECT id, name, start_date, end_date
+             FROM workouts
+             WHERE user_id = $1
              ORDER BY start_date DESC
              LIMIT 1",
+            &[&self.user_id.as_i64()],
         )?;
+        drop(client);
 
-        let row = stmt
-            .query_row(params![self.user_id], |row| {
-                Ok((
-                    row.get::<_, WorkoutId>(0)?,
-                    row.get::<_, Option<String>>(1)?,
-                    row.get::<_, OffsetDateTime>(2)?,
-                    row.get::<_, Option<OffsetDateTime>>(3)?,
-                ))
-            })
-            .optional()?;
-
-        row.map(|(id, name, sd, ed)| self.build_workout(id, name, sd, ed))
+        row.map(workout_header_from_row)
+            .transpose()?
+            .map(|(id, name, start_date, end_date)| self.build_workout(id, name, start_date, end_date))
             .transpose()
     }
 
     fn get_last_n(&self, n: usize) -> Result<Vec<Workout>, Self::RepoError> {
-        let mut stmt = self.connection.prepare(
+        let limit = to_i64(n, "limit")?;
+        let mut client = self.client()?;
+        let rows = client.query(
             "SELECT id, name, start_date, end_date
              FROM workouts
-             WHERE user_id = ?1
+             WHERE user_id = $1
              ORDER BY start_date DESC
-             LIMIT ?2",
+             LIMIT $2",
+            &[&self.user_id.as_i64(), &limit],
         )?;
+        drop(client);
 
-        let rows = stmt.query_map(params![self.user_id, n as i64], |row| {
-            Ok((
-                row.get::<_, WorkoutId>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, OffsetDateTime>(2)?,
-                row.get::<_, Option<OffsetDateTime>>(3)?,
-            ))
-        })?;
-
-        rows.collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .map(|(id, name, sd, ed)| self.build_workout(id, name, sd, ed))
-            .collect()
-    }
-
-    fn get_by_date(&self, date: time::Date) -> Result<Vec<Workout>, Self::RepoError> {
-        let mut stmt = self.connection.prepare(
-            "SELECT id, name, start_date, end_date
-             FROM workouts
-             WHERE user_id = ?1 AND DATE(start_date) = ?2
-             ORDER BY start_date DESC",
-        )?;
-
-        let rows = stmt.query_map(params![self.user_id, date], |row| {
-            Ok((
-                row.get::<_, WorkoutId>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, OffsetDateTime>(2)?,
-                row.get::<_, Option<OffsetDateTime>>(3)?,
-            ))
-        })?;
-
-        rows.collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .map(|(id, name, sd, ed)| self.build_workout(id, name, sd, ed))
+        rows.into_iter()
+            .map(workout_header_from_row)
+            .map(|result| {
+                result.and_then(|(id, name, start_date, end_date)| {
+                    self.build_workout(id, name, start_date, end_date)
+                })
+            })
             .collect()
     }
 
     fn delete(&self, id: &WorkoutId) -> Result<(), Self::RepoError> {
-        let tx = self.connection.unchecked_transaction()?;
-        tx.execute(
-            "DELETE FROM performed_sets WHERE workout_id = ?1 AND user_id = ?2",
-            params![id, self.user_id],
+        let mut client = self.client()?;
+        client.execute(
+            "DELETE FROM workouts WHERE id = $1 AND user_id = $2",
+            &[id.as_uuid(), &self.user_id.as_i64()],
         )?;
-        tx.execute(
-            "DELETE FROM workout_exercises WHERE workout_id = ?1 AND user_id = ?2",
-            params![id, self.user_id],
-        )?;
-        tx.execute(
-            "DELETE FROM workouts WHERE id = ?1 AND user_id = ?2",
-            params![id, self.user_id],
-        )?;
-        tx.commit()?;
         Ok(())
     }
 
     fn update_name(&self, id: &WorkoutId, name: Option<&str>) -> Result<(), Self::RepoError> {
-        self.connection.execute(
-            "UPDATE workouts SET name = ?3 WHERE id = ?1 AND user_id = ?2",
-            params![id, self.user_id, name],
+        let mut client = self.client()?;
+        client.execute(
+            "UPDATE workouts SET name = $3 WHERE id = $1 AND user_id = $2",
+            &[id.as_uuid(), &self.user_id.as_i64(), &name],
         )?;
         Ok(())
     }
@@ -441,43 +434,42 @@ impl WorkoutRepo for SqliteWorkoutRepo<'_> {
         workout_id: &WorkoutId,
         exercise_id: &ExerciseId,
     ) -> Result<(), Self::RepoError> {
-        let tx = self.connection.unchecked_transaction()?;
-        let entry_order: Option<i64> = tx
-            .query_row(
-                "SELECT entry_order FROM workout_exercises
-                 WHERE workout_id = ?1 AND user_id = ?2 AND excercise_id = ?3",
-                params![workout_id, self.user_id, exercise_id],
-                |row| row.get(0),
-            )
-            .optional()?;
+        let mut client = self.client()?;
+        let mut tx = client.transaction()?;
+        let entry_order: Option<i32> = tx
+            .query_opt(
+                "SELECT entry_order
+                 FROM workout_exercises
+                 WHERE workout_id = $1 AND user_id = $2 AND exercise_id = $3",
+                &[workout_id.as_uuid(), &self.user_id.as_i64(), exercise_id.as_uuid()],
+            )?
+            .map(|row| row.get("entry_order"));
 
-        let Some(order) = entry_order else {
+        let Some(entry_order) = entry_order else {
             tx.commit()?;
             return Ok(());
         };
 
         tx.execute(
             "DELETE FROM workout_exercises
-             WHERE workout_id = ?1 AND user_id = ?2 AND excercise_id = ?3",
-            params![workout_id, self.user_id, exercise_id],
+             WHERE workout_id = $1 AND user_id = $2 AND exercise_id = $3",
+            &[workout_id.as_uuid(), &self.user_id.as_i64(), exercise_id.as_uuid()],
         )?;
         tx.execute(
-            "UPDATE workout_exercises SET entry_order = entry_order - 1
-             WHERE workout_id = ?1 AND user_id = ?2 AND entry_order > ?3",
-            params![workout_id, self.user_id, order],
+            "UPDATE workout_exercises
+             SET entry_order = entry_order - 1
+             WHERE workout_id = $1 AND user_id = $2 AND entry_order > $3",
+            &[workout_id.as_uuid(), &self.user_id.as_i64(), &entry_order],
         )?;
         tx.commit()?;
         Ok(())
     }
 
     fn remove_exercise_from_all(&self, exercise_id: &ExerciseId) -> Result<(), Self::RepoError> {
-        self.connection.execute(
-            "DELETE FROM performed_sets WHERE excercise_id = ?1 AND user_id = ?2",
-            params![exercise_id, self.user_id],
-        )?;
-        self.connection.execute(
-            "DELETE FROM workout_exercises WHERE excercise_id = ?1 AND user_id = ?2",
-            params![exercise_id, self.user_id],
+        let mut client = self.client()?;
+        client.execute(
+            "DELETE FROM workout_exercises WHERE exercise_id = $1 AND user_id = $2",
+            &[exercise_id.as_uuid(), &self.user_id.as_i64()],
         )?;
         Ok(())
     }
@@ -488,172 +480,188 @@ impl WorkoutRepo for SqliteWorkoutRepo<'_> {
         exercise_id: &ExerciseId,
         set_index: usize,
     ) -> Result<(), Self::RepoError> {
-        let set_order = set_index as i64;
-        let tx = self.connection.unchecked_transaction()?;
+        let set_order = to_i32(set_index, "set_order")?;
+        let mut client = self.client()?;
+        let mut tx = client.transaction()?;
         let changed = tx.execute(
             "DELETE FROM performed_sets
-             WHERE workout_id = ?1 AND user_id = ?2 AND excercise_id = ?3 AND set_order = ?4",
-            params![workout_id, self.user_id, exercise_id, set_order],
+             WHERE workout_id = $1 AND user_id = $2 AND exercise_id = $3 AND set_order = $4",
+            &[
+                workout_id.as_uuid(),
+                &self.user_id.as_i64(),
+                exercise_id.as_uuid(),
+                &set_order,
+            ],
         )?;
+
         if changed > 0 {
             tx.execute(
-                "UPDATE performed_sets SET set_order = set_order - 1
-                 WHERE workout_id = ?1 AND user_id = ?2 AND excercise_id = ?3 AND set_order > ?4",
-                params![workout_id, self.user_id, exercise_id, set_order],
+                "UPDATE performed_sets
+                 SET set_order = set_order - 1
+                 WHERE workout_id = $1 AND user_id = $2 AND exercise_id = $3 AND set_order > $4",
+                &[
+                    workout_id.as_uuid(),
+                    &self.user_id.as_i64(),
+                    exercise_id.as_uuid(),
+                    &set_order,
+                ],
             )?;
         }
+
         tx.commit()?;
         Ok(())
     }
 
     fn get_dates_in_range(&self, from: Date, to: Date) -> Result<Vec<Date>, Self::RepoError> {
-        let mut stmt = self.connection.prepare(
-            "SELECT DISTINCT DATE(start_date) AS d
+        let mut client = self.client()?;
+        let rows = client.query(
+            "SELECT DISTINCT start_date::date AS workout_date
              FROM workouts
-             WHERE user_id = ?1 AND DATE(start_date) >= ?2 AND DATE(start_date) <= ?3
-             ORDER BY d ASC",
+             WHERE user_id = $1 AND start_date::date >= $2 AND start_date::date <= $3
+             ORDER BY workout_date ASC",
+            &[&self.user_id.as_i64(), &from, &to],
         )?;
 
-        let from_s = from.to_string();
-        let to_s = to.to_string();
-        let rows = stmt.query_map(params![self.user_id, from_s, to_s], |row| {
-            row.get::<_, String>(0)
+        Ok(rows
+            .into_iter()
+            .map(|row| row.get("workout_date"))
+            .collect())
+    }
+}
+
+#[derive(Debug, Clone)]
+struct StoredSet {
+    reps: i32,
+    load_type: PgLoadType,
+    weight_value: Option<f64>,
+    weight_units: Option<PgWeightUnits>,
+}
+
+impl StoredSet {
+    fn from_domain(value: &PerformedSet) -> Result<Self, PostgresWorkoutRepoError> {
+        let reps = i32::try_from(value.reps).map_err(|_| {
+            PostgresWorkoutRepoError::ValueOutOfRange {
+                field: "reps",
+                value: value.reps as usize,
+            }
         })?;
 
-        rows.collect::<Result<Vec<_>, _>>()?
-            .into_iter()
-            .map(|s| date_from_ymd_str(&s))
-            .collect::<Result<Vec<_>, _>>()
+        let (load_type, weight_value, weight_units) = match &value.kind {
+            LoadType::Weighted(weight) => (
+                PgLoadType::Weighted,
+                Some(weight.value),
+                Some(PgWeightUnits::from(weight.units)),
+            ),
+            LoadType::BodyWeight => (PgLoadType::BodyWeight, None, None),
+        };
+
+        Ok(Self {
+            reps,
+            load_type,
+            weight_value,
+            weight_units,
+        })
+    }
+
+    fn into_domain(self) -> Result<PerformedSet, PostgresWorkoutRepoError> {
+        let reps = u32::try_from(self.reps)
+            .map_err(|_| PostgresWorkoutRepoError::InvalidReps(self.reps))?;
+        let kind = match self.load_type {
+            PgLoadType::Weighted => LoadType::Weighted(Weight::new(
+                self.weight_value
+                    .ok_or(PostgresWorkoutRepoError::MissingWeightForWeightedSet)?,
+                WeightUnits::from(
+                    self.weight_units
+                        .ok_or(PostgresWorkoutRepoError::MissingWeightUnitsForWeightedSet)?,
+                ),
+            )),
+            PgLoadType::BodyWeight => LoadType::BodyWeight,
+        };
+
+        Ok(PerformedSet { reps, kind })
     }
 }
 
-fn date_from_ymd_str(s: &str) -> Result<Date, SqliteWorkoutRepoError> {
-    let mut p = s.split('-');
-    let year: i32 = p
-        .next()
-        .and_then(|x| x.parse().ok())
-        .ok_or_else(|| SqliteWorkoutRepoError::InvalidDateString(s.to_string()))?;
-    let month_n: u8 = p
-        .next()
-        .and_then(|x| x.parse().ok())
-        .ok_or_else(|| SqliteWorkoutRepoError::InvalidDateString(s.to_string()))?;
-    let day: u8 = p
-        .next()
-        .and_then(|x| x.parse().ok())
-        .ok_or_else(|| SqliteWorkoutRepoError::InvalidDateString(s.to_string()))?;
-    let month = time::Month::try_from(month_n)
-        .map_err(|_| SqliteWorkoutRepoError::InvalidDateString(s.to_string()))?;
-    Date::from_calendar_date(year, month, day)
-        .map_err(|_| SqliteWorkoutRepoError::InvalidDateString(s.to_string()))
+fn stored_set_from_row(row: Row) -> Result<StoredSet, PostgresWorkoutRepoError> {
+    Ok(StoredSet {
+        reps: row.get("reps"),
+        load_type: row.get("load_type"),
+        weight_value: row.get("weight_value"),
+        weight_units: row.get("weight_units"),
+    })
 }
 
-/// LoadType spans multiple columns — still needs manual encode/decode.
-fn encode_load_type(v: &LoadType) -> (i64, Option<f64>, Option<&WeightUnits>) {
-    match v {
-        LoadType::Weighted(w) => (1, Some(w.value), Some(&w.units)),
-        LoadType::BodyWeight => (2, None, None),
-    }
+fn workout_header_from_row(
+    row: Row,
+) -> Result<(WorkoutId, Option<String>, OffsetDateTime, Option<OffsetDateTime>), PostgresWorkoutRepoError>
+{
+    Ok((
+        WorkoutId::from_uuid(row.get("id")),
+        row.get("name"),
+        row.get("start_date"),
+        row.get("end_date"),
+    ))
 }
 
-fn decode_load_type(
-    lt: i64,
-    w: Option<f64>,
-    wu: Option<WeightUnits>,
-) -> Result<LoadType, SqliteWorkoutRepoError> {
-    match lt {
-        1 => Ok(LoadType::Weighted(Weight {
-            value: w.ok_or(SqliteWorkoutRepoError::MissingWeightForWeightedSet)?,
-            units: wu.ok_or(SqliteWorkoutRepoError::MissingWeightUnitsForWeightedSet)?,
-        })),
-        2 => Ok(LoadType::BodyWeight),
-        _ => Err(SqliteWorkoutRepoError::InvalidLoadType(lt)),
-    }
+fn to_i32(value: usize, field: &'static str) -> Result<i32, PostgresWorkoutRepoError> {
+    i32::try_from(value).map_err(|_| PostgresWorkoutRepoError::ValueOutOfRange { field, value })
+}
+
+fn to_i64(value: usize, field: &'static str) -> Result<i64, PostgresWorkoutRepoError> {
+    i64::try_from(value).map_err(|_| PostgresWorkoutRepoError::ValueOutOfRange { field, value })
+}
+
+fn count_to_i32(value: i64, field: &'static str) -> Result<i32, PostgresWorkoutRepoError> {
+    i32::try_from(value).map_err(|_| PostgresWorkoutRepoError::CountOutOfRange { field, value })
 }
 
 #[cfg(test)]
 mod tests {
     use domain::{
-        excercise::{LoadType, PerformedSet, Workout, WorkoutExercise},
-        traits::WorkoutRepo,
-        types::{UserId, Weight, WeightUnits},
+        excercise::LoadType,
+        types::{Weight, WeightUnits},
     };
 
-    use super::SqliteWorkoutDb;
+    use crate::repos::postgres_types::{PgLoadType, PgWeightUnits};
+
+    use super::StoredSet;
 
     #[test]
-    fn saves_and_loads_workout_with_entries_and_sets() {
-        let db = SqliteWorkoutDb::in_memory().expect("db should initialize");
-        let repo = db.for_user(UserId::new(1));
+    fn stored_set_round_trips_weighted_loads() {
+        let stored = StoredSet::from_domain(&domain::excercise::PerformedSet {
+            reps: 8,
+            kind: LoadType::Weighted(Weight::new(185.0, WeightUnits::Pounds)),
+        })
+        .expect("set should convert to storage");
 
-        let eid = domain::excercise::ExerciseId::new();
-        let mut workout = Workout::new(Some("Push Day".to_string()));
-        let mut entry = WorkoutExercise::new(eid);
-        entry.notes = Some("Top set first".to_string());
-        entry.add_set(PerformedSet {
-            kind: LoadType::Weighted(Weight {
-                value: 100.0,
-                units: WeightUnits::Pounds,
-            }),
-            reps: 5,
-        });
-        entry.add_set(PerformedSet {
+        assert_eq!(stored.load_type, PgLoadType::Weighted);
+        assert_eq!(stored.weight_units, Some(PgWeightUnits::Pounds));
+
+        let restored = stored.into_domain().expect("set should convert from storage");
+        match restored.kind {
+            LoadType::Weighted(weight) => {
+                assert_eq!(weight.value, 185.0);
+                assert_eq!(weight.units, WeightUnits::Pounds);
+            }
+            LoadType::BodyWeight => panic!("expected weighted set"),
+        }
+        assert_eq!(restored.reps, 8);
+    }
+
+    #[test]
+    fn stored_set_round_trips_bodyweight_loads() {
+        let stored = StoredSet::from_domain(&domain::excercise::PerformedSet {
+            reps: 15,
             kind: LoadType::BodyWeight,
-            reps: 12,
-        });
-        workout.entries.push(entry);
+        })
+        .expect("set should convert to storage");
 
-        repo.save(&workout).expect("save should succeed");
+        assert_eq!(stored.load_type, PgLoadType::BodyWeight);
+        assert_eq!(stored.weight_value, None);
+        assert_eq!(stored.weight_units, None);
 
-        let loaded = repo.get_by_id(&workout.id).unwrap().unwrap();
-        assert_eq!(loaded.name, workout.name);
-        assert_eq!(loaded.entries.len(), 1);
-        assert_eq!(loaded.entries[0].exercise_id, eid);
-        assert_eq!(loaded.entries[0].notes, Some("Top set first".to_string()));
-        assert_eq!(loaded.entries[0].sets.len(), 2);
-        assert_eq!(loaded.entries[0].sets[0].reps, 5);
-        assert_eq!(loaded.entries[0].sets[1].reps, 12);
-    }
-
-    #[test]
-    fn adds_exercise_and_set_to_existing_workout() {
-        let db = SqliteWorkoutDb::in_memory().expect("db should initialize");
-        let repo = db.for_user(UserId::new(1));
-
-        let workout = Workout::new(Some("Leg Day".to_string()));
-        let eid = domain::excercise::ExerciseId::new();
-
-        repo.save(&workout).unwrap();
-        repo.add_exercise(&workout.id, &WorkoutExercise::new(eid))
-            .unwrap();
-        repo.add_set(
-            &workout.id,
-            &eid,
-            &PerformedSet {
-                kind: LoadType::Weighted(Weight {
-                    value: 140.0,
-                    units: WeightUnits::Pounds,
-                }),
-                reps: 3,
-            },
-        )
-        .unwrap();
-
-        let loaded = repo.get_by_id(&workout.id).unwrap().unwrap();
-        assert_eq!(loaded.entries.len(), 1);
-        assert_eq!(loaded.entries[0].sets.len(), 1);
-        assert_eq!(loaded.entries[0].sets[0].reps, 3);
-    }
-
-    #[test]
-    fn different_users_see_own_workouts() {
-        let db = SqliteWorkoutDb::in_memory().expect("db should initialize");
-        let repo_a = db.for_user(UserId::new(1));
-        let repo_b = db.for_user(UserId::new(2));
-
-        let workout = Workout::new(Some("Push Day".to_string()));
-        repo_a.save(&workout).unwrap();
-
-        assert_eq!(repo_a.get_all().unwrap().len(), 1);
-        assert_eq!(repo_b.get_all().unwrap().len(), 0);
+        let restored = stored.into_domain().expect("set should convert from storage");
+        assert!(matches!(restored.kind, LoadType::BodyWeight));
+        assert_eq!(restored.reps, 15);
     }
 }
