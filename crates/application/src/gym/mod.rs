@@ -1,7 +1,9 @@
+use std::collections::{HashMap, HashSet};
+
 use domain::{
     excercise::{
-        Excercise, ExcerciseId, ExcerciseKind, ExcerciseSource, MuscleGroup, PerformedSet, Workout,
-        WorkoutDateQuery, WorkoutExercise, WorkoutId, WorkoutQuery, catalog,
+        Exercise, ExerciseId, ExerciseKind, ExerciseMetadata, ExerciseSource, MuscleGroup,
+        PerformedSet, Workout, WorkoutDateQuery, WorkoutExercise, WorkoutId, WorkoutQuery, catalog,
     },
     traits::*,
 };
@@ -15,6 +17,11 @@ pub struct GymApp<E: ExcerciseRepo, W: WorkoutRepo> {
     workout_repo: W,
 }
 
+pub struct WorkoutQueryResult {
+    pub workouts: Vec<Workout>,
+    pub excercises: HashMap<ExerciseId, ExerciseMetadata>,
+}
+
 impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
     pub fn new(excercise_repo: E, workout_repo: W) -> Self {
         Self {
@@ -26,7 +33,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
     #[instrument(skip(self), err)]
     pub fn get_all_excercises(
         &self,
-    ) -> Result<Vec<Excercise>, AppError<E::RepoError, W::RepoError>> {
+    ) -> Result<Vec<Exercise>, AppError<E::RepoError, W::RepoError>> {
         self.excercise_repo
             .get_all()
             .map_err(AppError::ExcerciseRepo)
@@ -34,17 +41,13 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
 
     /// Inserts the full built-in exercise catalog when the user has none yet.
     #[instrument(skip(self), err)]
-    pub fn seed_built_in_excercises(
-        &self,
-    ) -> Result<(), AppError<E::RepoError, W::RepoError>> {
+    pub fn seed_built_in_excercises(&self) -> Result<(), AppError<E::RepoError, W::RepoError>> {
         let existing = self
             .excercise_repo
             .get_all()
             .map_err(AppError::ExcerciseRepo)?;
 
-        let has_built_ins = existing
-            .iter()
-            .any(|e| e.source == ExcerciseSource::BuiltIn);
+        let has_built_ins = existing.iter().any(|e| e.source == ExerciseSource::BuiltIn);
 
         if !has_built_ins {
             for exercise in catalog::built_in_exercises() {
@@ -71,9 +74,9 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
         name: String,
         muscle_group: MuscleGroup,
         secondary_muscle_groups: Option<Vec<MuscleGroup>>,
-        kind: ExcerciseKind,
+        kind: ExerciseKind,
     ) -> Result<(), AppError<E::RepoError, W::RepoError>> {
-        let excercise = Excercise::new(name, muscle_group, secondary_muscle_groups, kind);
+        let excercise = Exercise::new(name, muscle_group, secondary_muscle_groups, kind);
         self.excercise_repo
             .save(&excercise)
             .map_err(AppError::ExcerciseRepo)?;
@@ -110,7 +113,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
     pub fn add_excercise_to_workout(
         &self,
         workout_id: &WorkoutId,
-        excercise_id: ExcerciseId,
+        excercise_id: ExerciseId,
     ) -> Result<(), AppError<E::RepoError, W::RepoError>> {
         self.workout_repo
             .add_exercise(workout_id, &WorkoutExercise::new(excercise_id))
@@ -126,7 +129,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
     pub fn add_set_for_excercise(
         &self,
         workout_id: &WorkoutId,
-        excercise_id: &ExcerciseId,
+        excercise_id: &ExerciseId,
         set: PerformedSet,
     ) -> Result<(), AppError<E::RepoError, W::RepoError>> {
         self.workout_repo
@@ -158,7 +161,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
     #[instrument(skip(self), fields(excercise_id = ?id), err)]
     pub fn delete_excercise(
         &self,
-        id: &ExcerciseId,
+        id: &ExerciseId,
     ) -> Result<(), AppError<E::RepoError, W::RepoError>> {
         self.workout_repo
             .remove_exercise_from_all(id)
@@ -174,9 +177,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
         &self,
         id: &WorkoutId,
     ) -> Result<(), AppError<E::RepoError, W::RepoError>> {
-        self.workout_repo
-            .delete(id)
-            .map_err(AppError::WorkoutRepo)
+        self.workout_repo.delete(id).map_err(AppError::WorkoutRepo)
     }
 
     #[instrument(skip(self), fields(workout_id = ?id, name = ?name), err)]
@@ -198,7 +199,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
     pub fn remove_excercise_from_workout(
         &self,
         workout_id: &WorkoutId,
-        excercise_id: &ExcerciseId,
+        excercise_id: &ExerciseId,
     ) -> Result<(), AppError<E::RepoError, W::RepoError>> {
         self.workout_repo
             .remove_exercise(workout_id, excercise_id)
@@ -217,7 +218,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
     pub fn remove_set_from_workout(
         &self,
         workout_id: &WorkoutId,
-        excercise_id: &ExcerciseId,
+        excercise_id: &ExerciseId,
         set_index: usize,
     ) -> Result<(), AppError<E::RepoError, W::RepoError>> {
         self.workout_repo
@@ -237,10 +238,10 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
     }
 
     #[instrument(skip(self), fields(query = ?query), err)]
-    pub fn query_workouts(
+    pub fn query_workout_resource(
         &self,
         query: WorkoutQuery,
-    ) -> Result<Vec<Workout>, AppError<E::RepoError, W::RepoError>> {
+    ) -> Result<WorkoutQueryResult, AppError<E::RepoError, W::RepoError>> {
         let mut workouts = match query.date {
             WorkoutDateQuery::OnDate(date) => self
                 .workout_repo
@@ -258,40 +259,292 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
                 .collect(),
         };
 
+        let exercise_ids = collect_excercise_ids(&workouts);
+        let mut excercises: HashMap<_, _> = self
+            .excercise_repo
+            .get_metadata_by_ids(&exercise_ids)
+            .map_err(AppError::ExcerciseRepo)?
+            .into_iter()
+            .map(|exercise| (exercise.id, exercise))
+            .collect();
+
         if let Some(muscle_group) = query.muscle_group {
-            let exercises = self
-                .excercise_repo
-                .get_all()
-                .map_err(AppError::ExcerciseRepo)?;
-
-            let matching_ids: std::collections::HashSet<_> = exercises
-                .iter()
-                .filter(|e| {
-                    e.muscle_group == muscle_group
-                        || e.secondary_muscle_groups
-                            .as_ref()
-                            .is_some_and(|groups| groups.contains(&muscle_group))
-                })
-                .map(|e| e.id)
-                .collect();
-
             for workout in &mut workouts {
-                workout
-                    .entries
-                    .retain(|entry| matching_ids.contains(&entry.excercise_id));
+                workout.entries.retain(|entry| {
+                    excercises
+                        .get(&entry.exercise_id)
+                        .is_some_and(|exercise| exercise.matches_muscle_group(muscle_group))
+                });
             }
             workouts.retain(|w| !w.entries.is_empty());
         }
 
-        Ok(workouts)
+        let referenced_excercise_ids: HashSet<_> =
+            collect_excercise_ids(&workouts).into_iter().collect();
+        excercises.retain(|id, _| referenced_excercise_ids.contains(id));
+
+        Ok(WorkoutQueryResult {
+            workouts,
+            excercises,
+        })
+    }
+
+    #[instrument(skip(self), fields(query = ?query), err)]
+    pub fn query_workouts(
+        &self,
+        query: WorkoutQuery,
+    ) -> Result<Vec<Workout>, AppError<E::RepoError, W::RepoError>> {
+        self.query_workout_resource(query)
+            .map(|result| result.workouts)
     }
 
     pub fn get_excercise_by_id(
         &self,
-        id: &ExcerciseId,
-    ) -> Result<Option<Excercise>, AppError<E::RepoError, W::RepoError>> {
+        id: &ExerciseId,
+    ) -> Result<Option<Exercise>, AppError<E::RepoError, W::RepoError>> {
         self.excercise_repo
             .get_by_id(id)
             .map_err(AppError::ExcerciseRepo)
+    }
+}
+
+fn collect_excercise_ids(workouts: &[Workout]) -> Vec<ExerciseId> {
+    let mut seen = HashSet::new();
+    let mut ids = Vec::new();
+
+    for workout in workouts {
+        for entry in &workout.entries {
+            if seen.insert(entry.exercise_id) {
+                ids.push(entry.exercise_id);
+            }
+        }
+    }
+
+    ids
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        cell::RefCell,
+        collections::HashSet,
+        error::Error,
+        fmt::{Display, Formatter},
+        rc::Rc,
+    };
+
+    use domain::{
+        excercise::{
+            Exercise, ExerciseId, ExerciseKind, ExerciseMetadata, MuscleGroup, Workout,
+            WorkoutDateQuery, WorkoutExercise, WorkoutId, WorkoutQuery,
+        },
+        traits::{ExcerciseRepo, WorkoutRepo},
+    };
+    use time::Date;
+
+    use super::GymApp;
+
+    #[derive(Debug)]
+    struct TestRepoError;
+
+    impl Display for TestRepoError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            f.write_str("test repo error")
+        }
+    }
+
+    impl Error for TestRepoError {}
+
+    struct FakeExcerciseRepo {
+        exercises: Vec<Exercise>,
+        requested_ids: Rc<RefCell<Vec<ExerciseId>>>,
+    }
+
+    impl ExcerciseRepo for FakeExcerciseRepo {
+        type RepoError = TestRepoError;
+
+        fn get_by_id(&self, id: &ExerciseId) -> Result<Option<Exercise>, Self::RepoError> {
+            Ok(self
+                .exercises
+                .iter()
+                .find(|exercise| &exercise.id == id)
+                .cloned())
+        }
+
+        fn save(&self, _exercise: &Exercise) -> Result<(), Self::RepoError> {
+            Ok(())
+        }
+
+        fn get_all(&self) -> Result<Vec<Exercise>, Self::RepoError> {
+            Ok(self.exercises.clone())
+        }
+
+        fn get_metadata_by_ids(
+            &self,
+            ids: &[ExerciseId],
+        ) -> Result<Vec<ExerciseMetadata>, Self::RepoError> {
+            self.requested_ids.borrow_mut().extend(ids.iter().copied());
+
+            let wanted: HashSet<_> = ids.iter().copied().collect();
+            Ok(self
+                .exercises
+                .iter()
+                .filter(|exercise| wanted.contains(&exercise.id))
+                .map(Exercise::metadata)
+                .collect())
+        }
+
+        fn delete(&self, _id: &ExerciseId) -> Result<(), Self::RepoError> {
+            Ok(())
+        }
+    }
+
+    struct FakeWorkoutRepo {
+        workouts: Vec<Workout>,
+    }
+
+    impl WorkoutRepo for FakeWorkoutRepo {
+        type RepoError = TestRepoError;
+
+        fn get_by_id(&self, id: &WorkoutId) -> Result<Option<Workout>, Self::RepoError> {
+            Ok(self
+                .workouts
+                .iter()
+                .find(|workout| &workout.id == id)
+                .cloned())
+        }
+
+        fn get_all(&self) -> Result<Vec<Workout>, Self::RepoError> {
+            Ok(self.workouts.clone())
+        }
+
+        fn save(&self, _workout: &Workout) -> Result<(), Self::RepoError> {
+            Ok(())
+        }
+
+        fn add_exercise(
+            &self,
+            _workout_id: &WorkoutId,
+            _exercise: &WorkoutExercise,
+        ) -> Result<(), Self::RepoError> {
+            Ok(())
+        }
+
+        fn add_set(
+            &self,
+            _workout_id: &WorkoutId,
+            _exercise_id: &ExerciseId,
+            _set: &domain::excercise::PerformedSet,
+        ) -> Result<(), Self::RepoError> {
+            Ok(())
+        }
+
+        fn get_by_date(&self, date: Date) -> Result<Vec<Workout>, Self::RepoError> {
+            Ok(self
+                .workouts
+                .iter()
+                .filter(|workout| workout.start_date.date() == date)
+                .cloned()
+                .collect())
+        }
+
+        fn get_latest(&self) -> Result<Option<Workout>, Self::RepoError> {
+            Ok(self.workouts.first().cloned())
+        }
+
+        fn get_last_n(&self, n: usize) -> Result<Vec<Workout>, Self::RepoError> {
+            Ok(self.workouts.iter().take(n).cloned().collect())
+        }
+
+        fn delete(&self, _id: &WorkoutId) -> Result<(), Self::RepoError> {
+            Ok(())
+        }
+
+        fn update_name(&self, _id: &WorkoutId, _name: Option<&str>) -> Result<(), Self::RepoError> {
+            Ok(())
+        }
+
+        fn remove_exercise(
+            &self,
+            _workout_id: &WorkoutId,
+            _exercise_id: &ExerciseId,
+        ) -> Result<(), Self::RepoError> {
+            Ok(())
+        }
+
+        fn remove_exercise_from_all(
+            &self,
+            _exercise_id: &ExerciseId,
+        ) -> Result<(), Self::RepoError> {
+            Ok(())
+        }
+
+        fn remove_set(
+            &self,
+            _workout_id: &WorkoutId,
+            _exercise_id: &ExerciseId,
+            _set_index: usize,
+        ) -> Result<(), Self::RepoError> {
+            Ok(())
+        }
+
+        fn get_dates_in_range(&self, _from: Date, _to: Date) -> Result<Vec<Date>, Self::RepoError> {
+            Ok(vec![])
+        }
+    }
+
+    #[test]
+    fn query_workout_resource_only_fetches_referenced_exercises() {
+        let bench = Exercise::new(
+            "Bench Press".to_string(),
+            MuscleGroup::Chest,
+            Some(vec![MuscleGroup::Arms]),
+            ExerciseKind::Weighted,
+        );
+        let squat = Exercise::new(
+            "Squat".to_string(),
+            MuscleGroup::Legs,
+            Some(vec![MuscleGroup::Core]),
+            ExerciseKind::Weighted,
+        );
+        let row = Exercise::new(
+            "Row".to_string(),
+            MuscleGroup::Back,
+            None,
+            ExerciseKind::Weighted,
+        );
+
+        let mut workout = Workout::new(Some("Upper/Lower".to_string()));
+        workout.entries.push(WorkoutExercise::new(bench.id));
+        workout.entries.push(WorkoutExercise::new(squat.id));
+
+        let requested_ids = Rc::new(RefCell::new(Vec::new()));
+        let app = GymApp::new(
+            FakeExcerciseRepo {
+                exercises: vec![bench.clone(), squat.clone(), row.clone()],
+                requested_ids: Rc::clone(&requested_ids),
+            },
+            FakeWorkoutRepo {
+                workouts: vec![workout.clone()],
+            },
+        );
+
+        let result = app
+            .query_workout_resource(WorkoutQuery {
+                date: WorkoutDateQuery::OnDate(workout.start_date.date()),
+                muscle_group: Some(MuscleGroup::Chest),
+            })
+            .unwrap();
+
+        assert_eq!(result.workouts.len(), 1);
+        assert_eq!(result.workouts[0].entries.len(), 1);
+        assert_eq!(result.workouts[0].entries[0].exercise_id, bench.id);
+
+        let returned_ids: HashSet<_> = result.excercises.keys().copied().collect();
+        assert_eq!(returned_ids, HashSet::from([bench.id]));
+
+        let requested_ids: HashSet<_> = requested_ids.borrow().iter().copied().collect();
+        assert_eq!(requested_ids, HashSet::from([bench.id, squat.id]));
+        assert!(!requested_ids.contains(&row.id));
     }
 }
