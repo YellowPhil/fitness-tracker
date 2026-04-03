@@ -1,7 +1,7 @@
 use domain::{
     excercise::{
         Excercise, ExcerciseId, ExcerciseKind, ExcerciseSource, MuscleGroup, PerformedSet, Workout,
-        WorkoutExercise, WorkoutId, catalog,
+        WorkoutDateQuery, WorkoutExercise, WorkoutId, WorkoutQuery, catalog,
     },
     traits::*,
 };
@@ -234,5 +234,64 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
         self.workout_repo
             .get_dates_in_range(from, to)
             .map_err(AppError::WorkoutRepo)
+    }
+
+    #[instrument(skip(self), fields(query = ?query), err)]
+    pub fn query_workouts(
+        &self,
+        query: WorkoutQuery,
+    ) -> Result<Vec<Workout>, AppError<E::RepoError, W::RepoError>> {
+        let mut workouts = match query.date {
+            WorkoutDateQuery::OnDate(date) => self
+                .workout_repo
+                .get_by_date(date)
+                .map_err(AppError::WorkoutRepo)?,
+            WorkoutDateQuery::LastN(n) => self
+                .workout_repo
+                .get_last_n(n)
+                .map_err(AppError::WorkoutRepo)?,
+            WorkoutDateQuery::Latest => self
+                .workout_repo
+                .get_latest()
+                .map_err(AppError::WorkoutRepo)?
+                .into_iter()
+                .collect(),
+        };
+
+        if let Some(muscle_group) = query.muscle_group {
+            let exercises = self
+                .excercise_repo
+                .get_all()
+                .map_err(AppError::ExcerciseRepo)?;
+
+            let matching_ids: std::collections::HashSet<_> = exercises
+                .iter()
+                .filter(|e| {
+                    e.muscle_group == muscle_group
+                        || e.secondary_muscle_groups
+                            .as_ref()
+                            .is_some_and(|groups| groups.contains(&muscle_group))
+                })
+                .map(|e| e.id)
+                .collect();
+
+            for workout in &mut workouts {
+                workout
+                    .entries
+                    .retain(|entry| matching_ids.contains(&entry.excercise_id));
+            }
+            workouts.retain(|w| !w.entries.is_empty());
+        }
+
+        Ok(workouts)
+    }
+
+    pub fn get_excercise_by_id(
+        &self,
+        id: &ExcerciseId,
+    ) -> Result<Option<Excercise>, AppError<E::RepoError, W::RepoError>> {
+        self.excercise_repo
+            .get_by_id(id)
+            .map_err(AppError::ExcerciseRepo)
     }
 }

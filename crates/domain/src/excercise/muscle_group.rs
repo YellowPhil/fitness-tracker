@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::Display, strum::EnumString)]
 pub enum MuscleGroup {
     #[strum(serialize = "Chest")]
     Chest,

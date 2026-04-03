@@ -38,6 +38,10 @@ pub trait WorkoutRepo {
 
     fn get_by_date(&self, date: Date) -> Result<Vec<Workout>, Self::RepoError>;
 
+    fn get_latest(&self) -> Result<Option<Workout>, Self::RepoError>;
+
+    fn get_last_n(&self, n: usize) -> Result<Vec<Workout>, Self::RepoError>;
+
     fn delete(&self, id: &WorkoutId) -> Result<(), Self::RepoError>;
 
     fn update_name(
