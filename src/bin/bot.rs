@@ -14,9 +14,8 @@ async fn main() {
 }
 
 async fn run() -> anyhow::Result<()> {
-    env::var("TELOXIDE_TOKEN").context(
-        "TELOXIDE_TOKEN must be set (Telegram bot token from @BotFather)",
-    )?;
+    env::var("TELOXIDE_TOKEN")
+        .context("TELOXIDE_TOKEN must be set (Telegram bot token from @BotFather)")?;
 
     let web_app_url = env::var("FRONTEND_URL")
         .or_else(|_| env::var("FITNESS_WEB_APP_URL"))

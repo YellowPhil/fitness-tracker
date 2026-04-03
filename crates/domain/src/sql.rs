@@ -1,19 +1,19 @@
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 
-use crate::excercise::{ExcerciseId, ExcerciseKind, ExcerciseSource, MuscleGroup, WorkoutId};
+use crate::excercise::{ExerciseId, ExerciseKind, ExerciseSource, MuscleGroup, WorkoutId};
 use crate::types::{HeightUnits, UserId, WeightUnits};
 
-impl ToSql for ExcerciseId {
+impl ToSql for ExerciseId {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
         Ok(self.as_uuid().to_string().into())
     }
 }
 
-impl FromSql for ExcerciseId {
+impl FromSql for ExerciseId {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         let s = value.as_str()?;
         let uuid = uuid::Uuid::parse_str(s).map_err(|e| FromSqlError::Other(Box::new(e)))?;
-        Ok(ExcerciseId::from_uuid(uuid))
+        Ok(ExerciseId::from_uuid(uuid))
     }
 }
 
@@ -43,41 +43,41 @@ impl FromSql for UserId {
     }
 }
 
-impl ToSql for ExcerciseKind {
+impl ToSql for ExerciseKind {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
         let v: i64 = match self {
-            ExcerciseKind::Weighted => 1,
-            ExcerciseKind::BodyWeight => 2,
+            ExerciseKind::Weighted => 1,
+            ExerciseKind::BodyWeight => 2,
         };
         Ok(v.into())
     }
 }
 
-impl FromSql for ExcerciseKind {
+impl FromSql for ExerciseKind {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         match value.as_i64()? {
-            1 => Ok(ExcerciseKind::Weighted),
-            2 => Ok(ExcerciseKind::BodyWeight),
+            1 => Ok(ExerciseKind::Weighted),
+            2 => Ok(ExerciseKind::BodyWeight),
             other => Err(FromSqlError::OutOfRange(other)),
         }
     }
 }
 
-impl ToSql for ExcerciseSource {
+impl ToSql for ExerciseSource {
     fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
         let v: i64 = match self {
-            ExcerciseSource::BuiltIn => 1,
-            ExcerciseSource::UserDefined => 2,
+            ExerciseSource::BuiltIn => 1,
+            ExerciseSource::UserDefined => 2,
         };
         Ok(v.into())
     }
 }
 
-impl FromSql for ExcerciseSource {
+impl FromSql for ExerciseSource {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         match value.as_i64()? {
-            1 => Ok(ExcerciseSource::BuiltIn),
-            2 => Ok(ExcerciseSource::UserDefined),
+            1 => Ok(ExerciseSource::BuiltIn),
+            2 => Ok(ExerciseSource::UserDefined),
             other => Err(FromSqlError::OutOfRange(other)),
         }
     }

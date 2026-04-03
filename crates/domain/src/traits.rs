@@ -1,19 +1,26 @@
 use time::Date;
 
 use crate::{
-    excercise::{Excercise, ExcerciseId, PerformedSet, Workout, WorkoutExercise, WorkoutId},
+    excercise::{
+        Exercise, ExerciseId, ExerciseMetadata, PerformedSet, Workout, WorkoutExercise, WorkoutId,
+    },
     health::HealthParams,
 };
 
 pub trait ExcerciseRepo {
     type RepoError: std::error::Error + Send + Sync;
 
-    fn get_by_id(&self, id: &ExcerciseId) -> Result<Option<Excercise>, Self::RepoError>;
-    fn save(&self, exercise: &Excercise) -> Result<(), Self::RepoError>;
+    fn get_by_id(&self, id: &ExerciseId) -> Result<Option<Exercise>, Self::RepoError>;
+    fn save(&self, exercise: &Exercise) -> Result<(), Self::RepoError>;
 
-    fn get_all(&self) -> Result<Vec<Excercise>, Self::RepoError>;
+    fn get_all(&self) -> Result<Vec<Exercise>, Self::RepoError>;
 
-    fn delete(&self, id: &ExcerciseId) -> Result<(), Self::RepoError>;
+    fn get_metadata_by_ids(
+        &self,
+        ids: &[ExerciseId],
+    ) -> Result<Vec<ExerciseMetadata>, Self::RepoError>;
+
+    fn delete(&self, id: &ExerciseId) -> Result<(), Self::RepoError>;
 }
 
 pub trait WorkoutRepo {
@@ -32,7 +39,7 @@ pub trait WorkoutRepo {
     fn add_set(
         &self,
         workout_id: &WorkoutId,
-        exercise_id: &ExcerciseId,
+        exercise_id: &ExerciseId,
         set: &PerformedSet,
     ) -> Result<(), Self::RepoError>;
 
@@ -44,33 +51,24 @@ pub trait WorkoutRepo {
 
     fn delete(&self, id: &WorkoutId) -> Result<(), Self::RepoError>;
 
-    fn update_name(
-        &self,
-        id: &WorkoutId,
-        name: Option<&str>,
-    ) -> Result<(), Self::RepoError>;
+    fn update_name(&self, id: &WorkoutId, name: Option<&str>) -> Result<(), Self::RepoError>;
 
     fn remove_exercise(
         &self,
         workout_id: &WorkoutId,
-        exercise_id: &ExcerciseId,
+        exercise_id: &ExerciseId,
     ) -> Result<(), Self::RepoError>;
 
-    fn remove_exercise_from_all(&self, exercise_id: &ExcerciseId)
-        -> Result<(), Self::RepoError>;
+    fn remove_exercise_from_all(&self, exercise_id: &ExerciseId) -> Result<(), Self::RepoError>;
 
     fn remove_set(
         &self,
         workout_id: &WorkoutId,
-        exercise_id: &ExcerciseId,
+        exercise_id: &ExerciseId,
         set_index: usize,
     ) -> Result<(), Self::RepoError>;
 
-    fn get_dates_in_range(
-        &self,
-        from: Date,
-        to: Date,
-    ) -> Result<Vec<Date>, Self::RepoError>;
+    fn get_dates_in_range(&self, from: Date, to: Date) -> Result<Vec<Date>, Self::RepoError>;
 }
 
 pub trait HealthRepo {

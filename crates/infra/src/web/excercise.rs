@@ -1,7 +1,7 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::{Json, Router};
-use domain::excercise::{Excercise, ExcerciseId, ExcerciseKind, ExcerciseSource, MuscleGroup};
+use domain::excercise::{Exercise, ExerciseId, ExerciseKind, ExerciseSource, MuscleGroup};
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
@@ -13,10 +13,7 @@ pub fn routes() -> Router<AppState> {
             "/",
             axum::routing::get(list_exercises).post(create_exercise),
         )
-        .route(
-            "/{exercise_id}",
-            axum::routing::delete(delete_exercise),
-        )
+        .route("/{exercise_id}", axum::routing::delete(delete_exercise))
 }
 
 #[derive(Serialize)]
@@ -29,14 +26,14 @@ struct ExcerciseResponse {
     source: String,
 }
 
-impl From<Excercise> for ExcerciseResponse {
-    fn from(e: Excercise) -> Self {
+impl From<Exercise> for ExcerciseResponse {
+    fn from(e: Exercise) -> Self {
         Self {
             id: e.id.as_uuid().to_string(),
             name: e.name,
             kind: match e.kind {
-                ExcerciseKind::Weighted => "weighted",
-                ExcerciseKind::BodyWeight => "bodyweight",
+                ExerciseKind::Weighted => "weighted",
+                ExerciseKind::BodyWeight => "bodyweight",
             }
             .into(),
             muscle_group: e.muscle_group.to_string(),
@@ -44,8 +41,8 @@ impl From<Excercise> for ExcerciseResponse {
                 .secondary_muscle_groups
                 .map(|groups| groups.into_iter().map(|g| g.to_string()).collect()),
             source: match e.source {
-                ExcerciseSource::BuiltIn => "builtin",
-                ExcerciseSource::UserDefined => "user",
+                ExerciseSource::BuiltIn => "builtin",
+                ExerciseSource::UserDefined => "user",
             }
             .into(),
         }
@@ -72,10 +69,10 @@ fn parse_muscle_group(s: &str) -> Result<MuscleGroup, ApiError> {
     }
 }
 
-fn parse_excercise_kind(s: &str) -> Result<ExcerciseKind, ApiError> {
+fn parse_excercise_kind(s: &str) -> Result<ExerciseKind, ApiError> {
     match s.to_lowercase().as_str() {
-        "weighted" => Ok(ExcerciseKind::Weighted),
-        "bodyweight" => Ok(ExcerciseKind::BodyWeight),
+        "weighted" => Ok(ExerciseKind::Weighted),
+        "bodyweight" => Ok(ExerciseKind::BodyWeight),
         _ => Err(ApiError::validation(format!("unknown exercise kind: {s}"))),
     }
 }
@@ -132,7 +129,7 @@ async fn delete_exercise(
     State(state): State<AppState>,
     Path(exercise_id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
-    let id = ExcerciseId::from_uuid(parse_uuid(&exercise_id)?);
+    let id = ExerciseId::from_uuid(parse_uuid(&exercise_id)?);
     let dbs = lock_dbs(&state)?;
     let app = dbs.gym_app(user.0);
     app.delete_excercise(&id).map_err(ApiError::internal)?;

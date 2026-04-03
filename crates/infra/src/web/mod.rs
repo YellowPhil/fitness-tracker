@@ -54,10 +54,7 @@ impl Databases {
         )
     }
 
-    pub fn health_app(
-        &self,
-        user_id: UserId,
-    ) -> application::HealthApp<SqliteHealthRepo<'_>> {
+    pub fn health_app(&self, user_id: UserId) -> application::HealthApp<SqliteHealthRepo<'_>> {
         application::HealthApp::new(self.health_db.for_user(user_id))
     }
 }
@@ -198,7 +195,9 @@ impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, msg) = match self {
             Self::Unauthorized => {
-                warn!("responding unauthorized (missing or invalid Telegram initData / credentials)");
+                warn!(
+                    "responding unauthorized (missing or invalid Telegram initData / credentials)"
+                );
                 (StatusCode::UNAUTHORIZED, "unauthorized")
             }
             Self::NotFound => {

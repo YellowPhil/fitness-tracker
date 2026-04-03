@@ -1,7 +1,7 @@
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::{Json, Router};
-use domain::excercise::{ExcerciseId, LoadType, PerformedSet, Workout, WorkoutExercise, WorkoutId};
+use domain::excercise::{ExerciseId, LoadType, PerformedSet, Workout, WorkoutExercise, WorkoutId};
 use domain::types::{Weight, WeightUnits};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -83,7 +83,7 @@ impl From<Workout> for WorkoutResponse {
 impl From<WorkoutExercise> for WorkoutEntryResponse {
     fn from(e: WorkoutExercise) -> Self {
         Self {
-            excercise_id: e.excercise_id.as_uuid().to_string(),
+            excercise_id: e.exercise_id.as_uuid().to_string(),
             notes: e.notes,
             sets: e.sets.into_iter().map(Into::into).collect(),
         }
@@ -287,8 +287,7 @@ async fn update_workout(
     let id = WorkoutId::from_uuid(parse_uuid(&workout_id)?);
     let dbs = lock_dbs(&state)?;
     let app = dbs.gym_app(user.0);
-    app
-        .update_workout_name(&id, body.name.as_deref())
+    app.update_workout_name(&id, body.name.as_deref())
         .map_err(ApiError::internal)?;
     let workout = app
         .get_workout_by_id(&id)
@@ -311,11 +310,10 @@ async fn remove_exercise_from_workout(
     Path((workout_id, exercise_id)): Path<(String, String)>,
 ) -> Result<StatusCode, ApiError> {
     let wid = WorkoutId::from_uuid(parse_uuid(&workout_id)?);
-    let eid = ExcerciseId::from_uuid(parse_uuid(&exercise_id)?);
+    let eid = ExerciseId::from_uuid(parse_uuid(&exercise_id)?);
     let dbs = lock_dbs(&state)?;
     let app = dbs.gym_app(user.0);
-    app
-        .remove_excercise_from_workout(&wid, &eid)
+    app.remove_excercise_from_workout(&wid, &eid)
         .map_err(ApiError::internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -335,11 +333,10 @@ async fn remove_set(
     Path((workout_id, exercise_id, set_index)): Path<(String, String, usize)>,
 ) -> Result<StatusCode, ApiError> {
     let wid = WorkoutId::from_uuid(parse_uuid(&workout_id)?);
-    let eid = ExcerciseId::from_uuid(parse_uuid(&exercise_id)?);
+    let eid = ExerciseId::from_uuid(parse_uuid(&exercise_id)?);
     let dbs = lock_dbs(&state)?;
     let app = dbs.gym_app(user.0);
-    app
-        .remove_set_from_workout(&wid, &eid, set_index)
+    app.remove_set_from_workout(&wid, &eid, set_index)
         .map_err(ApiError::internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -376,7 +373,7 @@ async fn add_exercise_to_workout(
     Json(body): Json<AddExerciseRequest>,
 ) -> Result<StatusCode, ApiError> {
     let wid = WorkoutId::from_uuid(parse_uuid(&workout_id)?);
-    let eid = ExcerciseId::from_uuid(parse_uuid(&body.excercise_id)?);
+    let eid = ExerciseId::from_uuid(parse_uuid(&body.excercise_id)?);
 
     let dbs = lock_dbs(&state)?;
     let app = dbs.gym_app(user.0);
@@ -401,7 +398,7 @@ async fn add_set(
     Json(body): Json<AddSetRequest>,
 ) -> Result<StatusCode, ApiError> {
     let wid = WorkoutId::from_uuid(parse_uuid(&workout_id)?);
-    let eid = ExcerciseId::from_uuid(parse_uuid(&exercise_id)?);
+    let eid = ExerciseId::from_uuid(parse_uuid(&exercise_id)?);
     let load = load_request_to_domain(body.load)?;
 
     let dbs = lock_dbs(&state)?;

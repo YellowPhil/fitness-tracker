@@ -22,8 +22,7 @@ async fn run() -> anyhow::Result<()> {
     let exercise_path =
         env::var("FITNESS_EXERCISE_DB").unwrap_or_else(|_| "data/exercises.db".into());
     let workout_path = env::var("FITNESS_WORKOUT_DB").unwrap_or_else(|_| "data/workouts.db".into());
-    let health_path =
-        env::var("FITNESS_HEALTH_DB").unwrap_or_else(|_| "data/health.db".into());
+    let health_path = env::var("FITNESS_HEALTH_DB").unwrap_or_else(|_| "data/health.db".into());
 
     ensure_db_parent_dirs(&[&exercise_path, &workout_path, &health_path])?;
 
@@ -70,8 +69,6 @@ async fn run() -> anyhow::Result<()> {
 
     tracing::info!(%addr, "HTTP server listening (API + static UI when web/dist exists)");
 
-    axum::serve(listener, app)
-        .await
-        .context("HTTP server")?;
+    axum::serve(listener, app).await.context("HTTP server")?;
     Ok(())
 }

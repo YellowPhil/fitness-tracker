@@ -1,11 +1,11 @@
 use std::path::Path;
 
 use domain::{
-    excercise::{Excercise, ExcerciseId, MuscleGroup},
+    excercise::{Exercise, ExerciseId, ExerciseMetadata, MuscleGroup},
     traits::ExcerciseRepo,
     types::UserId,
 };
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, ToSql, params, params_from_iter};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SqliteExcerciseRepoError {
@@ -64,7 +64,7 @@ impl SqliteExcerciseDb {
 impl ExcerciseRepo for SqliteExcerciseRepo<'_> {
     type RepoError = SqliteExcerciseRepoError;
 
-    fn get_by_id(&self, id: &ExcerciseId) -> Result<Option<Excercise>, Self::RepoError> {
+    fn get_by_id(&self, id: &ExerciseId) -> Result<Option<Exercise>, Self::RepoError> {
         let mut stmt = self.connection.prepare(
             "SELECT id, name, kind, muscle_group, secondary_muscle_groups, source
              FROM excercises
@@ -73,7 +73,7 @@ impl ExcerciseRepo for SqliteExcerciseRepo<'_> {
 
         Ok(stmt
             .query_row(params![id, self.user_id], |row| {
-                Ok(Excercise {
+                Ok(Exercise {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     kind: row.get(2)?,
@@ -85,7 +85,7 @@ impl ExcerciseRepo for SqliteExcerciseRepo<'_> {
             .optional()?)
     }
 
-    fn save(&self, exercise: &Excercise) -> Result<(), Self::RepoError> {
+    fn save(&self, exercise: &Exercise) -> Result<(), Self::RepoError> {
         self.connection.execute(
             "INSERT INTO excercises (id, user_id, name, kind, muscle_group, secondary_muscle_groups, source)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
@@ -108,7 +108,7 @@ impl ExcerciseRepo for SqliteExcerciseRepo<'_> {
         Ok(())
     }
 
-    fn get_all(&self) -> Result<Vec<Excercise>, Self::RepoError> {
+    fn get_all(&self) -> Result<Vec<Exercise>, Self::RepoError> {
         let mut stmt = self.connection.prepare(
             "SELECT id, name, kind, muscle_group, secondary_muscle_groups, source
              FROM excercises
@@ -117,7 +117,7 @@ impl ExcerciseRepo for SqliteExcerciseRepo<'_> {
         )?;
 
         let rows = stmt.query_map(params![self.user_id], |row| {
-            Ok(Excercise {
+            Ok(Exercise {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 kind: row.get(2)?,
@@ -130,7 +130,44 @@ impl ExcerciseRepo for SqliteExcerciseRepo<'_> {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    fn delete(&self, id: &ExcerciseId) -> Result<(), Self::RepoError> {
+    fn get_metadata_by_ids(
+        &self,
+        ids: &[ExerciseId],
+    ) -> Result<Vec<ExerciseMetadata>, Self::RepoError> {
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let placeholders = std::iter::repeat_n("?", ids.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let query = format!(
+            "SELECT id, name, muscle_group, secondary_muscle_groups
+             FROM excercises
+             WHERE user_id = ? AND id IN ({placeholders})
+             ORDER BY name ASC"
+        );
+
+        let mut stmt = self.connection.prepare(&query)?;
+        let mut sql_params: Vec<&dyn ToSql> = Vec::with_capacity(ids.len() + 1);
+        sql_params.push(&self.user_id);
+        for id in ids {
+            sql_params.push(id);
+        }
+
+        let rows = stmt.query_map(params_from_iter(sql_params), |row| {
+            Ok(ExerciseMetadata {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                muscle_group: row.get(2)?,
+                secondary_muscle_groups: decode_secondary_muscle_groups(row.get(3)?),
+            })
+        })?;
+
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    fn delete(&self, id: &ExerciseId) -> Result<(), Self::RepoError> {
         self.connection.execute(
             "DELETE FROM excercises WHERE id = ?1 AND user_id = ?2",
             params![id, self.user_id],
@@ -178,7 +215,7 @@ fn decode_secondary_muscle_groups(raw: Option<String>) -> Option<Vec<MuscleGroup
 #[cfg(test)]
 mod tests {
     use domain::{
-        excercise::{Excercise, ExcerciseKind, ExcerciseSource, MuscleGroup},
+        excercise::{Exercise, ExerciseKind, ExerciseSource, MuscleGroup},
         traits::ExcerciseRepo,
         types::UserId,
     };
@@ -189,13 +226,13 @@ mod tests {
     fn saves_and_loads_excercise() {
         let db = SqliteExcerciseDb::in_memory().expect("db should initialize");
         let repo = db.for_user(UserId::new(1));
-        let excercise = Excercise {
-            id: domain::excercise::ExcerciseId::new(),
+        let excercise = Exercise {
+            id: domain::excercise::ExerciseId::new(),
             name: "Bench Press".to_string(),
-            kind: ExcerciseKind::Weighted,
+            kind: ExerciseKind::Weighted,
             muscle_group: MuscleGroup::Chest,
             secondary_muscle_groups: Some(vec![MuscleGroup::Arms]),
-            source: ExcerciseSource::BuiltIn,
+            source: ExerciseSource::BuiltIn,
         };
 
         repo.save(&excercise).expect("save should succeed");
@@ -221,13 +258,13 @@ mod tests {
         let repo_a = db.for_user(UserId::new(1));
         let repo_b = db.for_user(UserId::new(2));
 
-        let excercise = Excercise {
-            id: domain::excercise::ExcerciseId::new(),
+        let excercise = Exercise {
+            id: domain::excercise::ExerciseId::new(),
             name: "Bench Press".to_string(),
-            kind: ExcerciseKind::Weighted,
+            kind: ExerciseKind::Weighted,
             muscle_group: MuscleGroup::Chest,
             secondary_muscle_groups: None,
-            source: ExcerciseSource::UserDefined,
+            source: ExerciseSource::UserDefined,
         };
 
         repo_a.save(&excercise).expect("save should succeed");

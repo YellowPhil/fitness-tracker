@@ -72,7 +72,8 @@ pub fn validate_init_data(
 ) -> Result<TelegramUser, AuthError> {
     let params = parse_init_data(init_data)?;
     let received_hash = params.get("hash").ok_or(AuthError::MissingHash)?;
-    let received_bytes = hex::decode(received_hash.trim()).map_err(|_| AuthError::InvalidHashHex)?;
+    let received_bytes =
+        hex::decode(received_hash.trim()).map_err(|_| AuthError::InvalidHashHex)?;
 
     // Keys sorted alphabetically (BTreeMap iteration order).
     let data_check_string: String = params
@@ -82,12 +83,13 @@ pub fn validate_init_data(
         .collect::<Vec<_>>()
         .join("\n");
 
-    let mut mac = HmacSha256::new_from_slice(b"WebAppData")
-        .map_err(|_| AuthError::InvalidEncoding)?;
+    let mut mac =
+        HmacSha256::new_from_slice(b"WebAppData").map_err(|_| AuthError::InvalidEncoding)?;
     mac.update(bot_token.as_bytes());
     let secret_key = mac.finalize().into_bytes();
 
-    let mut mac = HmacSha256::new_from_slice(&secret_key).map_err(|_| AuthError::InvalidEncoding)?;
+    let mut mac =
+        HmacSha256::new_from_slice(&secret_key).map_err(|_| AuthError::InvalidEncoding)?;
     mac.update(data_check_string.as_bytes());
     let expected = mac.finalize().into_bytes();
 
@@ -106,7 +108,10 @@ pub fn validate_init_data(
 }
 
 /// Validate `initData` with default max age (1 hour).
-pub fn validate_init_data_default(init_data: &str, bot_token: &str) -> Result<TelegramUser, AuthError> {
+pub fn validate_init_data_default(
+    init_data: &str,
+    bot_token: &str,
+) -> Result<TelegramUser, AuthError> {
     validate_init_data(
         init_data,
         bot_token,
@@ -125,7 +130,9 @@ fn check_auth_date(params: &BTreeMap<String, String>, max_age: Duration) -> Resu
         warn!("auth_date is in the future");
         return Err(AuthError::InvalidAuthDate);
     }
-    let elapsed = now.duration_since(auth_time).unwrap_or_else(|_| Duration::ZERO);
+    let elapsed = now
+        .duration_since(auth_time)
+        .unwrap_or_else(|_| Duration::ZERO);
     if elapsed > max_age {
         warn!(?elapsed, "initData expired");
         return Err(AuthError::Expired);

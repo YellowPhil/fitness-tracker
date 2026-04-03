@@ -1,8 +1,4 @@
-use domain::{
-    health::HealthParams,
-    traits::HealthRepo,
-    types::Weight,
-};
+use domain::{health::HealthParams, traits::HealthRepo, types::Weight};
 use tracing::instrument;
 
 pub struct HealthApp<H: HealthRepo> {

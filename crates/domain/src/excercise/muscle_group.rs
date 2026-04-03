@@ -1,4 +1,8 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, strum::Display, strum::EnumString)]
+use strum::IntoEnumIterator;
+
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::Display, strum::EnumString, strum::EnumIter,
+)]
 pub enum MuscleGroup {
     #[strum(serialize = "Chest")]
     Chest,
@@ -12,4 +16,10 @@ pub enum MuscleGroup {
     Legs,
     #[strum(serialize = "Core")]
     Core,
+}
+
+impl MuscleGroup {
+    pub fn all() -> impl Iterator<Item = Self> {
+        Self::iter()
+    }
 }

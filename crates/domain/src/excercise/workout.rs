@@ -1,6 +1,6 @@
 use time::OffsetDateTime;
 
-use crate::excercise::{ExcerciseId, PerformedSet};
+use crate::excercise::{ExerciseId, PerformedSet};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WorkoutId(uuid::Uuid);
 
@@ -15,7 +15,7 @@ pub struct Workout {
 
 #[derive(Debug, Clone)]
 pub struct WorkoutExercise {
-    pub excercise_id: ExcerciseId,
+    pub exercise_id: ExerciseId,
     pub sets: Vec<PerformedSet>,
     pub notes: Option<String>,
 }
@@ -48,9 +48,9 @@ impl WorkoutId {
 }
 
 impl WorkoutExercise {
-    pub fn new(excercise_id: ExcerciseId) -> Self {
+    pub fn new(exercise_id: ExerciseId) -> Self {
         Self {
-            excercise_id,
+            exercise_id,
             sets: vec![],
             notes: None,
         }

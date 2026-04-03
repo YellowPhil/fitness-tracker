@@ -1,52 +1,52 @@
 use crate::excercise::MuscleGroup;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ExcerciseId(uuid::Uuid);
+pub struct ExerciseId(uuid::Uuid);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ExcerciseSource {
+pub enum ExerciseSource {
     BuiltIn,
     UserDefined,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ExcerciseKind {
+pub enum ExerciseKind {
     Weighted,
     BodyWeight,
 }
 
 #[derive(Debug, Clone)]
-pub struct Excercise {
-    pub id: ExcerciseId,
+pub struct Exercise {
+    pub id: ExerciseId,
     pub name: String,
-    pub kind: ExcerciseKind,
+    pub kind: ExerciseKind,
     pub muscle_group: MuscleGroup,
     pub secondary_muscle_groups: Option<Vec<MuscleGroup>>,
-    pub source: ExcerciseSource,
+    pub source: ExerciseSource,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExcerciseMetadata {
-    pub id: ExcerciseId,
+pub struct ExerciseMetadata {
+    pub id: ExerciseId,
     pub name: String,
     pub muscle_group: MuscleGroup,
     pub secondary_muscle_groups: Option<Vec<MuscleGroup>>,
 }
 
-impl Excercise {
+impl Exercise {
     pub fn new(
         name: String,
         muscle_group: MuscleGroup,
         secondary_muscle_groups: Option<Vec<MuscleGroup>>,
-        kind: ExcerciseKind,
+        kind: ExerciseKind,
     ) -> Self {
         Self {
-            id: ExcerciseId::new(),
+            id: ExerciseId::new(),
             name,
             kind,
             muscle_group,
             secondary_muscle_groups,
-            source: ExcerciseSource::UserDefined,
+            source: ExerciseSource::UserDefined,
         }
     }
 
@@ -54,20 +54,20 @@ impl Excercise {
         name: String,
         muscle_group: MuscleGroup,
         secondary_muscle_groups: Option<Vec<MuscleGroup>>,
-        kind: ExcerciseKind,
+        kind: ExerciseKind,
     ) -> Self {
         Self {
-            id: ExcerciseId::new(),
+            id: ExerciseId::new(),
             name,
             kind,
             muscle_group,
             secondary_muscle_groups,
-            source: ExcerciseSource::BuiltIn,
+            source: ExerciseSource::BuiltIn,
         }
     }
 
-    pub fn metadata(&self) -> ExcerciseMetadata {
-        ExcerciseMetadata {
+    pub fn metadata(&self) -> ExerciseMetadata {
+        ExerciseMetadata {
             id: self.id,
             name: self.name.clone(),
             muscle_group: self.muscle_group,
@@ -76,7 +76,7 @@ impl Excercise {
     }
 }
 
-impl ExcerciseMetadata {
+impl ExerciseMetadata {
     pub fn matches_muscle_group(&self, muscle_group: MuscleGroup) -> bool {
         self.muscle_group == muscle_group
             || self
@@ -86,7 +86,7 @@ impl ExcerciseMetadata {
     }
 }
 
-impl ExcerciseId {
+impl ExerciseId {
     pub fn new() -> Self {
         Self(uuid::Uuid::new_v4())
     }
