@@ -1,7 +1,7 @@
 use std::sync::{MutexGuard, PoisonError};
 
 use domain::{
-    excercise::{Exercise, ExerciseId, ExerciseKind, ExerciseMetadata},
+    excercise::{Exercise, ExerciseId, ExerciseKind, ExerciseMetadata, MuscleGroup},
     traits::ExcerciseRepo,
     types::UserId,
 };
