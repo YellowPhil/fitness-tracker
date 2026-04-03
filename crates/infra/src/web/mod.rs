@@ -61,7 +61,7 @@ impl Databases {
 
 /// HTTP-layer state: databases plus Telegram bot token for `initData` validation.
 pub struct InnerState {
-    pub databases: Mutex<Databases>,
+    pub databases: Arc<Mutex<Databases>>,
     /// When `Some`, API requires `Authorization: tma <initData>` validated with this token.
     pub bot_token: Option<String>,
     /// When `true` and `bot_token` is `None`, accept legacy `x-user-id` (local dev only).
@@ -70,9 +70,13 @@ pub struct InnerState {
 
 pub type AppState = Arc<InnerState>;
 
-pub fn router(dbs: Databases, bot_token: Option<String>, dev_skip_auth: bool) -> Router<()> {
+pub fn router(
+    dbs: Arc<Mutex<Databases>>,
+    bot_token: Option<String>,
+    dev_skip_auth: bool,
+) -> Router<()> {
     let state: AppState = Arc::new(InnerState {
-        databases: Mutex::new(dbs),
+        databases: dbs,
         bot_token,
         dev_skip_auth,
     });
@@ -89,7 +93,7 @@ pub fn router(dbs: Databases, bot_token: Option<String>, dev_skip_auth: bool) ->
 /// When `frontend_url` is set (production: frontend on a different origin), a CORS layer is added
 /// allowing that origin to call the API.
 pub fn http_router(
-    dbs: Databases,
+    dbs: Arc<Mutex<Databases>>,
     frontend_url: Option<&str>,
     bot_token: Option<String>,
     dev_skip_auth: bool,
