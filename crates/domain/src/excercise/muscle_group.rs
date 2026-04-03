@@ -1,7 +1,17 @@
+
 use strum::IntoEnumIterator;
 
 #[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, strum::Display, strum::EnumString, strum::EnumIter,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    strum::Display,
+    strum::EnumString,
+    strum::EnumIter,
+    strum::AsRefStr,
 )]
 pub enum MuscleGroup {
     #[strum(serialize = "Chest")]

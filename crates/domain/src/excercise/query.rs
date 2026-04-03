@@ -3,7 +3,7 @@ use time::Date;
 use super::MuscleGroup;
 
 #[derive(Debug, Clone)]
-pub enum WorkoutDateQuery {
+pub enum QueryType {
     OnDate(Date),
     LastN(usize),
     Latest,
@@ -11,6 +11,6 @@ pub enum WorkoutDateQuery {
 
 #[derive(Debug, Clone)]
 pub struct WorkoutQuery {
-    pub date: WorkoutDateQuery,
+    pub date: QueryType,
     pub muscle_group: Option<MuscleGroup>,
 }
