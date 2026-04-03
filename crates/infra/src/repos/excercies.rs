@@ -110,6 +110,22 @@ impl ExcerciseRepo for PostgresExcerciseRepo<'_> {
         Ok(())
     }
 
+    fn get_by_muscle_group(
+        &self,
+        muscle_group: MuscleGroup,
+    ) -> Result<Vec<Exercise>, Self::RepoError> {
+        let mut client = self.client()?;
+        let rows = client.query(
+            "SELECT id, name, kind, muscle_group, secondary_muscle_groups, source
+             FROM exercises
+             WHERE user_id = $1 AND muscle_group = $2
+             ORDER BY name ASC",
+            &[&self.user_id.as_i64(), &PgMuscleGroup::from(muscle_group)],
+        )?;
+
+        Ok(rows.into_iter().map(exercise_from_row).collect())
+    }
+
     fn get_all(&self) -> Result<Vec<Exercise>, Self::RepoError> {
         let mut client = self.client()?;
         let rows = client.query(
@@ -182,7 +198,10 @@ mod tests {
 
     #[test]
     fn postgres_enums_match_domain_enums() {
-        assert_eq!(PgExerciseKind::from(ExerciseKind::Weighted), PgExerciseKind::Weighted);
+        assert_eq!(
+            PgExerciseKind::from(ExerciseKind::Weighted),
+            PgExerciseKind::Weighted
+        );
         assert_eq!(
             ExerciseKind::from(PgExerciseKind::BodyWeight),
             ExerciseKind::BodyWeight
@@ -195,7 +214,10 @@ mod tests {
             ExerciseSource::from(PgExerciseSource::UserDefined),
             ExerciseSource::UserDefined
         );
-        assert_eq!(PgMuscleGroup::from(MuscleGroup::Chest), PgMuscleGroup::Chest);
+        assert_eq!(
+            PgMuscleGroup::from(MuscleGroup::Chest),
+            PgMuscleGroup::Chest
+        );
         assert_eq!(MuscleGroup::from(PgMuscleGroup::Core), MuscleGroup::Core);
     }
 }

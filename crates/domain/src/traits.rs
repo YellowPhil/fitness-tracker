@@ -2,7 +2,8 @@ use time::Date;
 
 use crate::{
     excercise::{
-        Exercise, ExerciseId, ExerciseMetadata, PerformedSet, Workout, WorkoutExercise, WorkoutId,
+        Exercise, ExerciseId, ExerciseMetadata, MuscleGroup, PerformedSet, Workout,
+        WorkoutExercise, WorkoutId,
     },
     health::HealthParams,
 };
@@ -14,6 +15,11 @@ pub trait ExcerciseRepo {
     fn save(&self, exercise: &Exercise) -> Result<(), Self::RepoError>;
 
     fn get_all(&self) -> Result<Vec<Exercise>, Self::RepoError>;
+
+    fn get_by_muscle_group(
+        &self,
+        muscle_group: MuscleGroup,
+    ) -> Result<Vec<Exercise>, Self::RepoError>;
 
     fn get_metadata_by_ids(
         &self,
