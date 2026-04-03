@@ -7,6 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use std::path::Path;
 
+use anyhow::Context;
 use axum::Router;
 use axum::extract::FromRequestParts;
 use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
@@ -21,21 +22,21 @@ use tower_http::trace::TraceLayer;
 use tracing::{debug, error, instrument, warn};
 
 use crate::{
-    SqliteExcerciseDb, SqliteExcerciseRepo, SqliteHealthDb, SqliteHealthRepo, SqliteWorkoutDb,
-    SqliteWorkoutRepo,
+    PostgresExcerciseDb, PostgresExcerciseRepo, PostgresHealthDb, PostgresHealthRepo,
+    PostgresWorkoutDb, PostgresWorkoutRepo,
 };
 
 pub struct Databases {
-    pub exercise_db: SqliteExcerciseDb,
-    pub workout_db: SqliteWorkoutDb,
-    pub health_db: SqliteHealthDb,
+    pub exercise_db: PostgresExcerciseDb,
+    pub workout_db: PostgresWorkoutDb,
+    pub health_db: PostgresHealthDb,
 }
 
 impl Databases {
     pub fn new(
-        exercise_db: SqliteExcerciseDb,
-        workout_db: SqliteWorkoutDb,
-        health_db: SqliteHealthDb,
+        exercise_db: PostgresExcerciseDb,
+        workout_db: PostgresWorkoutDb,
+        health_db: PostgresHealthDb,
     ) -> Self {
         Self {
             exercise_db,
@@ -44,17 +45,27 @@ impl Databases {
         }
     }
 
+    pub fn connect(postgres_url: &str) -> anyhow::Result<Self> {
+        let client = crate::repos::postgres::connect(postgres_url).context("connect postgres")?;
+
+        Ok(Self::new(
+            PostgresExcerciseDb::new(Arc::clone(&client)),
+            PostgresWorkoutDb::new(Arc::clone(&client)),
+            PostgresHealthDb::new(client),
+        ))
+    }
+
     pub fn gym_app(
         &self,
         user_id: UserId,
-    ) -> application::GymApp<SqliteExcerciseRepo<'_>, SqliteWorkoutRepo<'_>> {
+    ) -> application::GymApp<PostgresExcerciseRepo<'_>, PostgresWorkoutRepo<'_>> {
         application::GymApp::new(
             self.exercise_db.for_user(user_id),
             self.workout_db.for_user(user_id),
         )
     }
 
-    pub fn health_app(&self, user_id: UserId) -> application::HealthApp<SqliteHealthRepo<'_>> {
+    pub fn health_app(&self, user_id: UserId) -> application::HealthApp<PostgresHealthRepo<'_>> {
         application::HealthApp::new(self.health_db.for_user(user_id))
     }
 }
@@ -70,6 +81,7 @@ pub struct InnerState {
 
 pub type AppState = Arc<InnerState>;
 
+/// JSON API under `/api/*`
 pub fn router(
     dbs: Arc<Mutex<Databases>>,
     bot_token: Option<String>,
