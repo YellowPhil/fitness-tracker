@@ -1,6 +1,8 @@
 pub mod bot;
-mod repos;
+pub mod mcp;
 pub mod web;
+
+mod repos;
 
 pub use repos::excercies::{SqliteExcerciseDb, SqliteExcerciseRepo, SqliteExcerciseRepoError};
 pub use repos::health::{SqliteHealthDb, SqliteHealthRepo, SqliteHealthRepoError};

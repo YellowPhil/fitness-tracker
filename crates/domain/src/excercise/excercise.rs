@@ -25,6 +25,14 @@ pub struct Excercise {
     pub source: ExcerciseSource,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExcerciseMetadata {
+    pub id: ExcerciseId,
+    pub name: String,
+    pub muscle_group: MuscleGroup,
+    pub secondary_muscle_groups: Option<Vec<MuscleGroup>>,
+}
+
 impl Excercise {
     pub fn new(
         name: String,
@@ -56,6 +64,25 @@ impl Excercise {
             secondary_muscle_groups,
             source: ExcerciseSource::BuiltIn,
         }
+    }
+
+    pub fn metadata(&self) -> ExcerciseMetadata {
+        ExcerciseMetadata {
+            id: self.id,
+            name: self.name.clone(),
+            muscle_group: self.muscle_group,
+            secondary_muscle_groups: self.secondary_muscle_groups.clone(),
+        }
+    }
+}
+
+impl ExcerciseMetadata {
+    pub fn matches_muscle_group(&self, muscle_group: MuscleGroup) -> bool {
+        self.muscle_group == muscle_group
+            || self
+                .secondary_muscle_groups
+                .as_ref()
+                .is_some_and(|groups| groups.contains(&muscle_group))
     }
 }
 
