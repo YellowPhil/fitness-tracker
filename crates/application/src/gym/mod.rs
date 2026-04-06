@@ -8,7 +8,7 @@ use domain::{
     traits::*,
 };
 use time::{Date, OffsetDateTime};
-use tracing::instrument;
+use tracing::{debug, instrument};
 
 pub use super::error::AppError;
 
@@ -54,6 +54,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
         let has_built_ins = existing.iter().any(|e| e.source == ExerciseSource::BuiltIn);
 
         if !has_built_ins {
+            debug!("no built-in exercises found, seeding catalog");
             for exercise in catalog::built_in_exercises() {
                 self.excercise_repo
                     .save(&exercise)
@@ -333,6 +334,7 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
             .map(|result| result.workouts)
     }
 
+    #[instrument(skip(self), fields(exercise_id = ?id), err)]
     pub async fn get_excercise_by_id(
         &self,
         id: &ExerciseId,

@@ -7,6 +7,7 @@ use domain::{
 };
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
 use time::{Date, OffsetDateTime};
+use tracing::instrument;
 
 use super::postgres_types::{PgLoadType, PgWeightUnits, PgWorkoutSource};
 
@@ -49,6 +50,7 @@ pub struct PostgresWorkoutRepo {
 }
 
 impl PostgresWorkoutRepo {
+    #[instrument(level = "debug", skip(self, name, start_date, end_date, source), fields(workout_id = ?id), err)]
     async fn build_workout(
         &self,
         id: WorkoutId,
@@ -67,6 +69,7 @@ impl PostgresWorkoutRepo {
         })
     }
 
+    #[instrument(level = "debug", skip(self), fields(workout_id = ?workout_id), err)]
     async fn load_workout_entries(
         &self,
         workout_id: &WorkoutId,
@@ -95,6 +98,7 @@ impl PostgresWorkoutRepo {
         Ok(entries)
     }
 
+    #[instrument(level = "debug", skip(self), fields(workout_id = ?workout_id, exercise_id = ?exercise_id), err)]
     async fn load_performed_sets(
         &self,
         workout_id: &WorkoutId,
@@ -122,6 +126,7 @@ impl PostgresWorkoutRepo {
 impl WorkoutRepo for PostgresWorkoutRepo {
     type RepoError = PostgresWorkoutRepoError;
 
+    #[instrument(skip(self), fields(table = "workouts"), err)]
     async fn get_all(&self) -> Result<Vec<Workout>, Self::RepoError> {
         let rows = sqlx::query(
             "SELECT id, name, start_date, end_date, source
@@ -141,6 +146,7 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         Ok(workouts)
     }
 
+    #[instrument(skip(self), fields(table = "workouts", workout_id = ?id), err)]
     async fn get_by_id(&self, id: &WorkoutId) -> Result<Option<Workout>, Self::RepoError> {
         let row = sqlx::query(
             "SELECT id, name, start_date, end_date, source
@@ -164,6 +170,7 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         }
     }
 
+    #[instrument(skip(self, workout), fields(table = "workouts", workout_id = ?workout.id, entry_count = workout.entries.len()), err)]
     async fn save(&self, workout: &Workout) -> Result<(), Self::RepoError> {
         let mut tx = self.pool.begin().await?;
         let pg_source = PgWorkoutSource::from(workout.source);
@@ -249,6 +256,7 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         Ok(())
     }
 
+    #[instrument(skip(self, exercise), fields(table = "workouts", workout_id = ?workout_id), err)]
     async fn add_exercise(
         &self,
         workout_id: &WorkoutId,
@@ -309,6 +317,7 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         Ok(())
     }
 
+    #[instrument(skip(self, set), fields(table = "performed_sets", workout_id = ?workout_id, exercise_id = ?exercise_id), err)]
     async fn add_set(
         &self,
         workout_id: &WorkoutId,
@@ -355,6 +364,7 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         Ok(())
     }
 
+    #[instrument(skip(self), fields(table = "workouts", date = %date), err)]
     async fn get_by_date(&self, date: Date) -> Result<Vec<Workout>, Self::RepoError> {
         let rows = sqlx::query(
             "SELECT id, name, start_date, end_date, source
@@ -375,6 +385,7 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         Ok(workouts)
     }
 
+    #[instrument(skip(self), fields(table = "workouts"), err)]
     async fn get_latest(&self) -> Result<Option<Workout>, Self::RepoError> {
         let row = sqlx::query(
             "SELECT id, name, start_date, end_date, source
@@ -399,6 +410,7 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         }
     }
 
+    #[instrument(skip(self), fields(table = "workouts", n = n), err)]
     async fn get_last_n(&self, n: usize) -> Result<Vec<Workout>, Self::RepoError> {
         let limit = to_i64(n, "limit")?;
         let rows = sqlx::query(
@@ -421,6 +433,7 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         Ok(workouts)
     }
 
+    #[instrument(skip(self), fields(table = "workouts", workout_id = ?id), err)]
     async fn delete(&self, id: &WorkoutId) -> Result<(), Self::RepoError> {
         sqlx::query("DELETE FROM workouts WHERE id = $1 AND user_id = $2")
             .bind(id.as_uuid())
@@ -430,6 +443,7 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         Ok(())
     }
 
+    #[instrument(skip(self, name), fields(table = "workouts", workout_id = ?id), err)]
     async fn update_name(&self, id: &WorkoutId, name: Option<&str>) -> Result<(), Self::RepoError> {
         sqlx::query("UPDATE workouts SET name = $3 WHERE id = $1 AND user_id = $2")
             .bind(id.as_uuid())
@@ -440,6 +454,7 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         Ok(())
     }
 
+    #[instrument(skip(self), fields(table = "workouts", workout_id = ?workout_id, exercise_id = ?exercise_id), err)]
     async fn remove_exercise(
         &self,
         workout_id: &WorkoutId,
@@ -488,6 +503,7 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         Ok(())
     }
 
+    #[instrument(skip(self), fields(table = "workout_exercises", exercise_id = ?exercise_id), err)]
     async fn remove_exercise_from_all(&self, exercise_id: &ExerciseId) -> Result<(), Self::RepoError> {
         sqlx::query(
             "DELETE FROM workout_exercises WHERE exercise_id = $1 AND user_id = $2",
@@ -499,6 +515,7 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         Ok(())
     }
 
+    #[instrument(skip(self), fields(table = "performed_sets", workout_id = ?workout_id, exercise_id = ?exercise_id, set_index = set_index), err)]
     async fn remove_set(
         &self,
         workout_id: &WorkoutId,
@@ -537,6 +554,7 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         Ok(())
     }
 
+    #[instrument(skip(self), fields(table = "workouts", from = %from, to = %to), err)]
     async fn get_dates_in_range(&self, from: Date, to: Date) -> Result<Vec<Date>, Self::RepoError> {
         let rows = sqlx::query(
             "SELECT DISTINCT start_date::date AS workout_date

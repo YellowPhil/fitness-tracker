@@ -4,6 +4,7 @@ use domain::{
     types::{Height, HeightUnits, UserId, Weight, WeightUnits},
 };
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
+use tracing::instrument;
 
 use super::postgres_types::{PgHeightUnits, PgWeightUnits};
 
@@ -43,6 +44,7 @@ pub struct PostgresHealthRepo {
 impl HealthRepo for PostgresHealthRepo {
     type RepoError = PostgresHealthRepoError;
 
+    #[instrument(skip(self), fields(table = "health_params"), err)]
     async fn get_health(&self) -> Result<HealthParams, Self::RepoError> {
         let row = sqlx::query(
             "SELECT weight_value, weight_units, height_value, height_units, age
@@ -65,6 +67,7 @@ impl HealthRepo for PostgresHealthRepo {
             }))
     }
 
+    #[instrument(skip(self, params), fields(table = "health_params"), err)]
     async fn save(&self, params: &HealthParams) -> Result<(), Self::RepoError> {
         let age = i32::try_from(params.age)
             .map_err(|_| PostgresHealthRepoError::AgeOutOfRange(params.age))?;

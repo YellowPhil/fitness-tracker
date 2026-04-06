@@ -4,6 +4,7 @@ use domain::{
     types::UserId,
 };
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
+use tracing::instrument;
 
 use super::postgres_types::{
     PgExerciseKind, PgExerciseSource, PgMuscleGroup, from_pg_muscle_groups, to_pg_muscle_groups,
@@ -41,6 +42,7 @@ pub struct PostgresExcerciseRepo {
 impl ExcerciseRepo for PostgresExcerciseRepo {
     type RepoError = PostgresExcerciseRepoError;
 
+    #[instrument(skip(self), fields(table = "exercises", exercise_id = ?id), err)]
     async fn get_by_id(&self, id: &ExerciseId) -> Result<Option<Exercise>, Self::RepoError> {
         let row = sqlx::query(
             "SELECT id, name, kind, muscle_group, secondary_muscle_groups, source
@@ -55,6 +57,7 @@ impl ExcerciseRepo for PostgresExcerciseRepo {
         Ok(row.map(exercise_from_row))
     }
 
+    #[instrument(skip(self, exercise), fields(table = "exercises", exercise_id = ?exercise.id, name = %exercise.name), err)]
     async fn save(&self, exercise: &Exercise) -> Result<(), Self::RepoError> {
         let secondary_muscle_groups = to_pg_muscle_groups(&exercise.secondary_muscle_groups);
 
@@ -89,6 +92,7 @@ impl ExcerciseRepo for PostgresExcerciseRepo {
         Ok(())
     }
 
+    #[instrument(skip(self), fields(table = "exercises", muscle_group = ?muscle_group), err)]
     async fn get_by_muscle_group(
         &self,
         muscle_group: MuscleGroup,
@@ -107,6 +111,7 @@ impl ExcerciseRepo for PostgresExcerciseRepo {
         Ok(rows.into_iter().map(exercise_from_row).collect())
     }
 
+    #[instrument(skip(self), fields(table = "exercises"), err)]
     async fn get_all(&self) -> Result<Vec<Exercise>, Self::RepoError> {
         let rows = sqlx::query(
             "SELECT id, name, kind, muscle_group, secondary_muscle_groups, source
@@ -121,6 +126,7 @@ impl ExcerciseRepo for PostgresExcerciseRepo {
         Ok(rows.into_iter().map(exercise_from_row).collect())
     }
 
+    #[instrument(skip(self, ids), fields(table = "exercises", id_count = ids.len()), err)]
     async fn get_metadata_by_ids(
         &self,
         ids: &[ExerciseId],
@@ -144,6 +150,7 @@ impl ExcerciseRepo for PostgresExcerciseRepo {
         Ok(rows.into_iter().map(metadata_from_row).collect())
     }
 
+    #[instrument(skip(self), fields(table = "exercises", exercise_id = ?id), err)]
     async fn delete(&self, id: &ExerciseId) -> Result<(), Self::RepoError> {
         sqlx::query("DELETE FROM exercises WHERE id = $1 AND user_id = $2")
             .bind(id.as_uuid())

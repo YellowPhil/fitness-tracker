@@ -19,6 +19,8 @@ use domain::{
     types::{UserId, Weight, WeightUnits},
 };
 
+use tracing::{debug, info, instrument};
+
 use crate::Databases;
 
 const MODEL: &str = "gpt-5";
@@ -57,6 +59,11 @@ impl WorkoutGenerator {
 
     /// Generates a workout plan. `max_exercise_count` is both communicated to the model and enforced
     /// via the response JSON schema (`maxItems` on `exercises`).
+    #[instrument(
+        skip(self, muscle_groups),
+        fields(user_id = self.user_id.as_i64(), date = %date, max_exercises = max_exercise_count),
+        err
+    )]
     pub async fn generate_workout(
         &self,
         date: time::Date,
@@ -75,6 +82,7 @@ impl WorkoutGenerator {
         if loaded_exercises.is_empty() {
             anyhow::bail!("No exercises found for the selected muscle groups");
         }
+        debug!(count = loaded_exercises.len(), "exercises loaded for muscle groups");
 
         let exercise_names_sorted = sorted_exercise_names(&loaded_exercises);
         let exercises_by_name = exercises_by_lowercase_name(&loaded_exercises);
@@ -105,6 +113,7 @@ impl WorkoutGenerator {
             ])
             .build()?;
 
+        debug!("sending initial request to model");
         let response_message = client
             .chat()
             .create(initial_request)
@@ -117,8 +126,12 @@ impl WorkoutGenerator {
             .clone();
 
         let follow_up_messages = match response_message.tool_calls {
-            None => initial_messages,
+            None => {
+                debug!("model skipped tool calls, using initial messages for follow-up");
+                initial_messages
+            }
             Some(ref tool_calls) => {
+                debug!(call_count = tool_calls.len(), "model requested tool calls");
                 let tool_responses = self.execute_tool_calls(tool_calls).await?;
                 if tool_responses.is_empty() {
                     anyhow::bail!("Model requested tools but none could be executed");
@@ -171,6 +184,11 @@ impl WorkoutGenerator {
             );
         }
 
+        info!(
+            name = ?name,
+            exercise_count = workout_exercises.len(),
+            "workout plan generated"
+        );
         Ok(GeneratedWorkout {
             name,
             exercises: workout_exercises,
@@ -180,6 +198,7 @@ impl WorkoutGenerator {
     /// Iterates over tool calls from the model, dispatches each known tool, and returns
     /// `(tool_call, result)` pairs. Unknown tools receive an error JSON payload so the
     /// conversation history stays valid for the API.
+    #[instrument(skip(self, tool_calls), fields(count = tool_calls.len()), err)]
     async fn execute_tool_calls(
         &self,
         tool_calls: &[ChatCompletionMessageToolCalls],
@@ -190,10 +209,12 @@ impl WorkoutGenerator {
             if let ChatCompletionMessageToolCalls::Function(tool_call) = tool_call_enum {
                 let name = &tool_call.function.name;
                 let result = if self.known_tools.contains(name) {
+                    debug!(tool = %name, "executing tool call");
                     self.call_tool(name, &tool_call.function.arguments)
                         .await
                         .unwrap_or_else(|e| e.to_string())
                 } else {
+                    debug!(tool = %name, "unknown tool call, returning error payload");
                     serde_json::json!({ "error": "unknown_tool", "name": name }).to_string()
                 };
                 responses.push((tool_call.clone(), result));
@@ -203,6 +224,7 @@ impl WorkoutGenerator {
         Ok(responses)
     }
 
+    #[instrument(skip(self, arguments), fields(tool = tool), err)]
     async fn call_tool(&self, tool: &str, arguments: &str) -> anyhow::Result<String> {
         let databases = Arc::clone(&self.databases);
         let user_id = self.user_id;
@@ -215,6 +237,7 @@ impl WorkoutGenerator {
     }
 }
 
+#[instrument(skip(databases, muscle_groups), fields(user_id = user_id.as_i64()), err)]
 async fn load_exercises_for_muscle_groups(
     databases: &Arc<Databases>,
     user_id: UserId,
@@ -391,6 +414,7 @@ fn build_follow_up_messages(
     messages
 }
 
+#[instrument(skip(databases, arguments), fields(user_id = user_id.as_i64()), err)]
 async fn execute_query_workouts(
     databases: Arc<Databases>,
     user_id: UserId,
@@ -421,6 +445,7 @@ async fn execute_query_workouts(
     ))
 }
 
+#[instrument(skip(databases, arguments), fields(user_id = user_id.as_i64()), err)]
 async fn execute_list_exercises(
     databases: Arc<Databases>,
     user_id: UserId,
@@ -462,7 +487,7 @@ fn exercise_query_tool() -> ChatCompletionTools {
                     "muscle_group": {
                         "type": "string",
                         "enum": muscle_groups,
-                        "description": "Optional muscle group filter. If omitted, all exercises are included."
+                        "description": "Muscle group filter."
                     },
                 },
                 "required": ["muscle_group"],
@@ -500,13 +525,13 @@ fn workout_query_tool() -> ChatCompletionTools {
                     "muscle_group": {
                         "type": "string",
                         "enum": muscle_groups,
-                        "description": "Optional muscle group filter. If omitted, all workout entries are included."
+                        "description": "Muscle group filter."
                     },
                 },
-                "required": [],
+                "required": ["muscle_group"],
                 "additionalProperties": false,
             }))
-            .strict(true)
+            .strict(false)
             .build()
             .unwrap()
             .into(),
