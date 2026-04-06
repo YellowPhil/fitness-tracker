@@ -386,7 +386,6 @@ function ExerciseEntry({
   const removeExerciseFromWorkout = useStore(
     (s) => s.removeExerciseFromWorkout,
   );
-  const removeSet = useStore((s) => s.removeSet);
 
   const isWeighted = exercise?.kind === "Weighted";
 
@@ -425,54 +424,33 @@ function ExerciseEntry({
         <div className="mb-2">
           <div
             className={cn(
-              "grid text-[0.6rem] uppercase tracking-wider text-fg-muted font-semibold mb-1 px-1",
+              "grid text-[0.6rem] uppercase tracking-wider text-fg-muted font-semibold mb-1",
               isWeighted
-                ? "grid-cols-[1.5rem_1fr_1fr_1.5rem]"
-                : "grid-cols-[1.5rem_1fr_1.5rem]",
+                ? "grid-cols-[2rem_1fr_1fr] gap-2 justify-items-center"
+                : "grid-cols-[2rem_1fr] justify-items-center",
             )}
           >
-            <span>Set</span>
+            <span className="justify-self-start">Set</span>
             {isWeighted && <span>Weight</span>}
             <span>Reps</span>
-            <span />
           </div>
           {entry.sets.map((set, si) => (
-            <div
+            <SwipeToRemove
               key={si}
-              className={cn(
-                "grid items-center text-sm py-1 px-1 rounded hover:bg-surface-2/50 group transition-colors",
-                isWeighted
-                  ? "grid-cols-[1.5rem_1fr_1fr_1.5rem]"
-                  : "grid-cols-[1.5rem_1fr_1.5rem]",
-              )}
+              onRemove={() =>
+                void useStore
+                  .getState()
+                  .removeSet(workoutId, entry.exerciseId, si)
+              }
             >
-              <span className="text-fg-muted text-xs">{si + 1}</span>
-              {set.kind.type === "Weighted" && (
-                <span className="text-fg-secondary">
-                  {set.kind.weight.value}
-                  <span className="text-fg-muted text-xs ml-0.5">
-                    {set.kind.weight.units}
-                  </span>
-                </span>
-              )}
-              <span className="text-fg-secondary">{set.reps}</span>
-              <button
-                onClick={() => void removeSet(workoutId, entry.exerciseId, si)}
-                className="opacity-0 group-hover:opacity-100 text-fg-muted hover:text-danger transition-all"
-                aria-label={`Remove set ${si + 1}`}
-              >
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <path d="M18 6L6 18M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
+              <SetRow
+                workoutId={workoutId}
+                exerciseId={entry.exerciseId}
+                set={set}
+                index={si}
+                isWeighted={isWeighted}
+              />
+            </SwipeToRemove>
           ))}
         </div>
       )}
@@ -483,6 +461,145 @@ function ExerciseEntry({
         isWeighted={isWeighted}
         lastSet={entry.sets.at(-1)}
       />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Editable set row
+// ---------------------------------------------------------------------------
+
+function SetRow({
+  workoutId,
+  exerciseId,
+  set,
+  index,
+  isWeighted,
+}: {
+  workoutId: string;
+  exerciseId: string;
+  set: PerformedSet;
+  index: number;
+  isWeighted: boolean;
+}) {
+  const updateSet = useStore((s) => s.updateSet);
+
+  function commit(field: "weight" | "reps", raw: string) {
+    const num = parseFloat(raw);
+    if (isNaN(num) || num <= 0) return;
+
+    let newSet: PerformedSet;
+    if (field === "weight" && set.kind.type === "Weighted") {
+      newSet = {
+        ...set,
+        kind: {
+          type: "Weighted",
+          weight: { value: num, units: set.kind.weight.units },
+        },
+      };
+    } else if (field === "reps") {
+      newSet = { ...set, reps: Math.round(num) };
+    } else {
+      return;
+    }
+
+    void updateSet(workoutId, exerciseId, index, newSet);
+  }
+
+  return (
+    <div
+      className={cn(
+        "grid items-center py-2 transition-colors",
+        isWeighted
+          ? "grid-cols-[2rem_1fr_1fr] gap-2 justify-items-center"
+          : "grid-cols-[2rem_1fr] justify-items-center",
+      )}
+    >
+      <span className="text-fg-muted text-xs font-medium justify-self-start tabular-nums pl-1">
+        {index + 1}
+      </span>
+
+      {isWeighted && set.kind.type === "Weighted" && (
+        <EditableCell
+          value={String(set.kind.weight.value)}
+          suffix={set.kind.weight.units}
+          inputMode="decimal"
+          onCommit={(v) => commit("weight", v)}
+        />
+      )}
+
+      <EditableCell
+        value={String(set.reps)}
+        suffix="reps"
+        inputMode="numeric"
+        onCommit={(v) => commit("reps", v)}
+      />
+    </div>
+  );
+}
+
+function EditableCell({
+  value,
+  suffix,
+  inputMode,
+  onCommit,
+}: {
+  value: string;
+  suffix: string;
+  inputMode: "decimal" | "numeric";
+  onCommit: (raw: string) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [value, editing]);
+
+  function handleFocus() {
+    setDraft("");
+    setEditing(true);
+  }
+
+  function handleBlur() {
+    setEditing(false);
+    const committed = draft.trim() === "" ? value : draft;
+    if (committed !== value) onCommit(committed);
+  }
+
+  return (
+    <div className="relative min-w-[4rem] text-center">
+      <input
+        ref={ref}
+        type="number"
+        inputMode={inputMode}
+        step={inputMode === "decimal" ? "0.5" : "1"}
+        value={editing ? draft : value}
+        placeholder={editing ? value : undefined}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") ref.current?.blur();
+          if (e.key === "Escape") {
+            setDraft(value);
+            setEditing(false);
+            ref.current?.blur();
+          }
+        }}
+        className={cn(
+          "inline-edit w-full rounded-lg px-3 py-1.5 text-sm font-medium text-fg tabular-nums text-center transition-colors",
+          editing
+            ? "bg-surface-2 border border-accent/50 outline-none placeholder:text-fg-muted/50"
+            : "bg-surface-2/60 border border-border/60 cursor-text hover:border-accent/40 hover:bg-surface-2",
+        )}
+      />
+      {!editing && (
+        <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-fg-muted text-[0.65rem]">
+          {suffix}
+        </span>
+      )}
     </div>
   );
 }
@@ -537,7 +654,13 @@ function AddSetForm({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex items-center gap-2">
+    <form onSubmit={handleSubmit} className="flex items-center gap-2 mt-1">
+      <button
+        type="submit"
+        className="bg-accent/15 text-accent text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-accent/25 transition-colors"
+      >
+        + Set
+      </button>
       {isWeighted && (
         <div className="flex items-center gap-1">
           <input
@@ -546,7 +669,7 @@ function AddSetForm({
             step="0.5"
             value={weight}
             onChange={(e) => setWeight(e.target.value)}
-            className="w-16 bg-surface-2 rounded-lg px-2 py-1.5 text-base text-center text-fg outline-none border border-transparent focus:border-accent/50 transition-colors"
+            className="w-16 bg-surface-2 rounded-lg px-2 py-1.5 text-sm text-center text-fg outline-none border border-transparent focus:border-accent/50 transition-colors"
             placeholder="kg"
           />
           <span className="text-[0.65rem] text-fg-muted">kg</span>
@@ -558,17 +681,11 @@ function AddSetForm({
           inputMode="numeric"
           value={reps}
           onChange={(e) => setReps(e.target.value)}
-            className="w-16 bg-surface-2 rounded-lg px-2 py-1.5 text-base text-center text-fg outline-none border border-transparent focus:border-accent/50 transition-colors"
-            placeholder="reps"
+          className="w-16 bg-surface-2 rounded-lg px-2 py-1.5 text-sm text-center text-fg outline-none border border-transparent focus:border-accent/50 transition-colors"
+          placeholder="reps"
         />
         <span className="text-[0.65rem] text-fg-muted">reps</span>
       </div>
-      <button
-        type="submit"
-        className="bg-accent/15 text-accent text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-accent/25 transition-colors"
-      >
-        + Set
-      </button>
     </form>
   );
 }

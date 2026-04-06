@@ -61,6 +61,12 @@ interface GymStore {
   removeExerciseFromWorkout: (workoutId: string, exerciseId: string) => Promise<void>;
 
   addSet: (workoutId: string, exerciseId: string, set: PerformedSet) => Promise<void>;
+  updateSet: (
+    workoutId: string,
+    exerciseId: string,
+    setIndex: number,
+    set: PerformedSet,
+  ) => Promise<void>;
   removeSet: (
     workoutId: string,
     exerciseId: string,
@@ -260,6 +266,18 @@ export const useStore = create<GymStore>()(
 
       addSet: async (workoutId, exerciseId, newSet) => {
         try {
+          await api.addSetApi(workoutId, exerciseId, newSet);
+          await get().refreshWorkouts();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+          throw e;
+        }
+      },
+
+      updateSet: async (workoutId, exerciseId, setIndex, newSet) => {
+        try {
+          await api.removeSetApi(workoutId, exerciseId, setIndex);
           await api.addSetApi(workoutId, exerciseId, newSet);
           await get().refreshWorkouts();
         } catch (e) {

@@ -85,7 +85,7 @@ body {
 
 /* Room below focused fields so they sit above the keyboard + fixed tab bar (see App.tsx). */
 @media (max-width: 768px) {
-  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not(.inline-edit),
   textarea {
     scroll-margin-bottom: max(7rem, 28svh);
   }
