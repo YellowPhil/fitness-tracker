@@ -1,18 +1,26 @@
+use std::str::FromStr;
+use std::sync::Arc;
+
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::{Json, Router};
-use domain::excercise::{ExerciseId, LoadType, PerformedSet, Workout, WorkoutExercise, WorkoutId};
+use domain::excercise::{
+    ExerciseId, LoadType, MuscleGroup, PerformedSet, Workout, WorkoutExercise, WorkoutId,
+};
 use domain::types::{Weight, WeightUnits};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tracing::instrument;
 
-use super::{ApiError, AppState, AuthUser, lock_dbs};
+use crate::ai::WorkoutGenerator;
+
+use super::{ApiError, AppState, AuthUser};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", axum::routing::get(list_workouts).post(create_workout))
         .route("/dates", axum::routing::get(get_workout_dates))
+        .route("/generate", axum::routing::post(generate_workout_ai))
         .route(
             "/{workout_id}",
             axum::routing::get(get_workout)
@@ -43,6 +51,8 @@ struct WorkoutResponse {
     name: Option<String>,
     start_date: i64,
     end_date: Option<i64>,
+    /// Wire value from `WorkoutSource::as_api_str` (`domain::excercise::workout_source`).
+    source: String,
     entries: Vec<WorkoutEntryResponse>,
 }
 
@@ -75,6 +85,7 @@ impl From<Workout> for WorkoutResponse {
             name: w.name,
             start_date: w.start_date.unix_timestamp(),
             end_date: w.end_date.map(|d| d.unix_timestamp()),
+            source: w.source.as_api_str().to_string(),
             entries: w.entries.into_iter().map(Into::into).collect(),
         }
     }
@@ -108,6 +119,15 @@ impl From<PerformedSet> for SetResponse {
 #[derive(Deserialize)]
 struct CreateWorkoutRequest {
     name: Option<String>,
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    date: Option<OffsetDateTime>,
+}
+
+#[derive(Deserialize)]
+struct GenerateWorkoutRequest {
+    /// Muscle group names as returned by the API (e.g. `"Chest"`, `"Legs"`).
+    muscle_groups: Vec<String>,
+    max_exercise_count: usize,
     #[serde(default, with = "time::serde::rfc3339::option")]
     date: Option<OffsetDateTime>,
 }
@@ -158,27 +178,9 @@ fn parse_uuid(s: &str) -> Result<uuid::Uuid, ApiError> {
 }
 
 fn parse_date(s: &str) -> Result<time::Date, ApiError> {
-    let parts: Vec<&str> = s.split('-').collect();
-    if parts.len() != 3 {
-        return Err(ApiError::validation(format!(
-            "invalid date format, expected YYYY-MM-DD: {s}"
-        )));
-    }
-    let year: i32 = parts[0]
-        .parse()
-        .map_err(|_| ApiError::validation(format!("invalid year in date: {s}")))?;
-    let month: u8 = parts[1]
-        .parse()
-        .map_err(|_| ApiError::validation(format!("invalid month in date: {s}")))?;
-    let day: u8 = parts[2]
-        .parse()
-        .map_err(|_| ApiError::validation(format!("invalid day in date: {s}")))?;
-
-    let month = time::Month::try_from(month)
-        .map_err(|_| ApiError::validation(format!("month out of range: {s}")))?;
-
-    time::Date::from_calendar_date(year, month, day)
-        .map_err(|e| ApiError::validation(format!("invalid date: {e}")))
+    let format = time::format_description::parse_borrowed::<2>("[year]-[month]-[day]").unwrap();
+    time::Date::parse(s, &format)
+        .map_err(|_| ApiError::validation(format!("invalid date format: {s}")))
 }
 
 fn parse_weight_units(s: &str) -> Result<WeightUnits, ApiError> {
@@ -208,17 +210,12 @@ async fn list_workouts(
     State(state): State<AppState>,
     Query(query): Query<ListWorkoutsQuery>,
 ) -> Result<Json<Vec<WorkoutResponse>>, ApiError> {
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.gym_app(user.0);
-
-    let workouts = match query.date {
-        Some(ref date_str) => {
-            let date = parse_date(date_str)?;
-            app.get_workout_by_date(date).map_err(ApiError::internal)?
-        }
-        None => app.get_all_workouts().map_err(ApiError::internal)?,
+    let date = query.date.as_deref().map(parse_date).transpose()?;
+    let app = state.databases.gym_app(user.0);
+    let workouts = match date {
+        Some(d) => app.get_workout_by_date(d).await.map_err(ApiError::internal)?,
+        None => app.get_all_workouts().await.map_err(ApiError::internal)?,
     };
-
     Ok(Json(workouts.into_iter().map(Into::into).collect()))
 }
 
@@ -228,10 +225,72 @@ async fn create_workout(
     State(state): State<AppState>,
     Json(body): Json<CreateWorkoutRequest>,
 ) -> Result<(StatusCode, Json<WorkoutResponse>), ApiError> {
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.gym_app(user.0);
-    let workout = app
+    let workout = state
+        .databases
+        .gym_app(user.0)
         .create_new_workout(body.name, body.date)
+        .await
+        .map_err(ApiError::internal)?;
+    Ok((StatusCode::CREATED, Json(workout.into())))
+}
+
+#[instrument(skip(state, user, body), fields(user_id = user.0.as_i64()))]
+async fn generate_workout_ai(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Json(body): Json<GenerateWorkoutRequest>,
+) -> Result<(StatusCode, Json<WorkoutResponse>), ApiError> {
+    let api_key = state
+        .openai_api_key
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .ok_or(ApiError::ServiceUnavailable(
+            "OPENAI_API_KEY not configured",
+        ))?;
+
+    if body.muscle_groups.is_empty() {
+        return Err(ApiError::validation("muscle_groups must not be empty"));
+    }
+    if body.max_exercise_count == 0 {
+        return Err(ApiError::validation(
+            "max_exercise_count must be at least 1",
+        ));
+    }
+
+    let muscle_groups: Vec<MuscleGroup> = body
+        .muscle_groups
+        .iter()
+        .map(|s| {
+            MuscleGroup::from_str(s).map_err(|_| {
+                ApiError::validation(format!(
+                    "invalid muscle group: {s} (expected e.g. Chest, Legs)"
+                ))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let dbs = Arc::clone(&state.databases);
+    let app = state.databases.gym_app(user.0);
+    app.seed_built_in_excercises()
+        .await
+        .map_err(ApiError::internal)?;
+
+    let generator = WorkoutGenerator::new(dbs, user.0, api_key);
+    let start_date = body.date.unwrap_or_else(OffsetDateTime::now_utc);
+    let date = start_date.date();
+
+    let generated = generator
+        .generate_workout(date, &muscle_groups, body.max_exercise_count)
+        .await
+        .map_err(ApiError::internal)?;
+
+    let workout = Workout::ai_generated(generated.name, start_date, generated.exercises);
+
+    state
+        .databases
+        .gym_app(user.0)
+        .save_workout(&workout)
+        .await
         .map_err(ApiError::internal)?;
 
     Ok((StatusCode::CREATED, Json(workout.into())))
@@ -247,14 +306,13 @@ async fn get_workout(
     Path(workout_id): Path<String>,
 ) -> Result<Json<WorkoutResponse>, ApiError> {
     let id = WorkoutId::from_uuid(parse_uuid(&workout_id)?);
-
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.gym_app(user.0);
-    let workout = app
+    let workout = state
+        .databases
+        .gym_app(user.0)
         .get_workout_by_id(&id)
+        .await
         .map_err(ApiError::internal)?
         .ok_or(ApiError::NotFound)?;
-
     Ok(Json(workout.into()))
 }
 
@@ -268,9 +326,12 @@ async fn delete_workout(
     Path(workout_id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
     let id = WorkoutId::from_uuid(parse_uuid(&workout_id)?);
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.gym_app(user.0);
-    app.delete_workout(&id).map_err(ApiError::internal)?;
+    state
+        .databases
+        .gym_app(user.0)
+        .delete_workout(&id)
+        .await
+        .map_err(ApiError::internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -285,12 +346,13 @@ async fn update_workout(
     Json(body): Json<UpdateWorkoutRequest>,
 ) -> Result<Json<WorkoutResponse>, ApiError> {
     let id = WorkoutId::from_uuid(parse_uuid(&workout_id)?);
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.gym_app(user.0);
+    let app = state.databases.gym_app(user.0);
     app.update_workout_name(&id, body.name.as_deref())
+        .await
         .map_err(ApiError::internal)?;
     let workout = app
         .get_workout_by_id(&id)
+        .await
         .map_err(ApiError::internal)?
         .ok_or(ApiError::NotFound)?;
     Ok(Json(workout.into()))
@@ -311,9 +373,11 @@ async fn remove_exercise_from_workout(
 ) -> Result<StatusCode, ApiError> {
     let wid = WorkoutId::from_uuid(parse_uuid(&workout_id)?);
     let eid = ExerciseId::from_uuid(parse_uuid(&exercise_id)?);
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.gym_app(user.0);
-    app.remove_excercise_from_workout(&wid, &eid)
+    state
+        .databases
+        .gym_app(user.0)
+        .remove_excercise_from_workout(&wid, &eid)
+        .await
         .map_err(ApiError::internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -334,9 +398,11 @@ async fn remove_set(
 ) -> Result<StatusCode, ApiError> {
     let wid = WorkoutId::from_uuid(parse_uuid(&workout_id)?);
     let eid = ExerciseId::from_uuid(parse_uuid(&exercise_id)?);
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.gym_app(user.0);
-    app.remove_set_from_workout(&wid, &eid, set_index)
+    state
+        .databases
+        .gym_app(user.0)
+        .remove_set_from_workout(&wid, &eid, set_index)
+        .await
         .map_err(ApiError::internal)?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -352,10 +418,11 @@ async fn get_workout_dates(
 ) -> Result<Json<WorkoutDatesResponse>, ApiError> {
     let from = parse_date(&query.from)?;
     let to = parse_date(&query.to)?;
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.gym_app(user.0);
-    let dates = app
+    let dates = state
+        .databases
+        .gym_app(user.0)
         .get_workout_dates_in_range(from, to)
+        .await
         .map_err(ApiError::internal)?;
     Ok(Json(WorkoutDatesResponse {
         dates: dates.iter().map(|d| d.to_string()).collect(),
@@ -375,9 +442,11 @@ async fn add_exercise_to_workout(
     let wid = WorkoutId::from_uuid(parse_uuid(&workout_id)?);
     let eid = ExerciseId::from_uuid(parse_uuid(&body.excercise_id)?);
 
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.gym_app(user.0);
-    app.add_excercise_to_workout(&wid, eid)
+    state
+        .databases
+        .gym_app(user.0)
+        .add_excercise_to_workout(&wid, eid)
+        .await
         .map_err(ApiError::internal)?;
 
     Ok(StatusCode::CREATED)
@@ -401,17 +470,19 @@ async fn add_set(
     let eid = ExerciseId::from_uuid(parse_uuid(&exercise_id)?);
     let load = load_request_to_domain(body.load)?;
 
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.gym_app(user.0);
-    app.add_set_for_excercise(
-        &wid,
-        &eid,
-        PerformedSet {
-            kind: load,
-            reps: body.reps,
-        },
-    )
-    .map_err(ApiError::internal)?;
+    state
+        .databases
+        .gym_app(user.0)
+        .add_set_for_excercise(
+            &wid,
+            &eid,
+            PerformedSet {
+                kind: load,
+                reps: body.reps,
+            },
+        )
+        .await
+        .map_err(ApiError::internal)?;
 
     Ok(StatusCode::CREATED)
 }

@@ -7,7 +7,7 @@ use domain::{
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
-use super::{ApiError, AppState, AuthUser, lock_dbs};
+use super::{ApiError, AppState, AuthUser};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -72,9 +72,12 @@ async fn get_profile(
     user: AuthUser,
     State(state): State<AppState>,
 ) -> Result<Json<ProfileResponse>, ApiError> {
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.health_app(user.0);
-    let params = app.get_profile().map_err(ApiError::internal)?;
+    let params = state
+        .databases
+        .health_app(user.0)
+        .get_profile()
+        .await
+        .map_err(ApiError::internal)?;
     Ok(Json(params.into()))
 }
 
@@ -93,9 +96,12 @@ async fn update_profile(
         body.age,
     );
 
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.health_app(user.0);
-    let saved = app.update_profile(params).map_err(ApiError::internal)?;
+    let saved = state
+        .databases
+        .health_app(user.0)
+        .update_profile(params)
+        .await
+        .map_err(ApiError::internal)?;
     Ok(Json(saved.into()))
 }
 
@@ -108,8 +114,11 @@ async fn update_weight(
     let units = parse_weight_units(&body.units)?;
     let weight = Weight::new(body.value, units);
 
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.health_app(user.0);
-    let updated = app.update_weight(weight).map_err(ApiError::internal)?;
+    let updated = state
+        .databases
+        .health_app(user.0)
+        .update_weight(weight)
+        .await
+        .map_err(ApiError::internal)?;
     Ok(Json(updated.into()))
 }

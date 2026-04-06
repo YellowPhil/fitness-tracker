@@ -1,24 +1,19 @@
-use std::sync::{MutexGuard, PoisonError};
-
 use domain::{
-    excercise::{ExerciseId, LoadType, PerformedSet, Workout, WorkoutExercise, WorkoutId},
+    excercise::{
+        ExerciseId, LoadType, PerformedSet, Workout, WorkoutExercise, WorkoutId, WorkoutSource,
+    },
     traits::WorkoutRepo,
     types::{UserId, Weight, WeightUnits},
 };
-use postgres::{Client, Row};
+use sqlx::{Pool, Postgres, Row, postgres::PgRow};
 use time::{Date, OffsetDateTime};
 
-use super::{
-    postgres::{SharedClient, connect},
-    postgres_types::{PgLoadType, PgWeightUnits},
-};
+use super::postgres_types::{PgLoadType, PgWeightUnits, PgWorkoutSource};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PostgresWorkoutRepoError {
     #[error("postgres error: {0}")]
-    Postgres(#[from] postgres::Error),
-    #[error("postgres connection lock poisoned")]
-    ConnectionPoisoned,
+    Postgres(#[from] sqlx::Error),
     #[error("weighted set missing weight value")]
     MissingWeightForWeightedSet,
     #[error("weighted set missing weight units")]
@@ -32,192 +27,199 @@ pub enum PostgresWorkoutRepoError {
 }
 
 pub struct PostgresWorkoutDb {
-    client: SharedClient,
-}
-
-pub struct PostgresWorkoutRepo<'db> {
-    client: &'db SharedClient,
-    user_id: UserId,
+    pool: Pool<Postgres>,
 }
 
 impl PostgresWorkoutDb {
-    pub fn open(url: &str) -> Result<Self, PostgresWorkoutRepoError> {
-        Ok(Self {
-            client: connect(url)?,
-        })
+    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
+        Self { pool }
     }
 
-    pub(crate) fn new(client: SharedClient) -> Self {
-        Self { client }
-    }
-
-    pub fn for_user(&self, user_id: UserId) -> PostgresWorkoutRepo<'_> {
+    pub fn for_user(&self, user_id: UserId) -> PostgresWorkoutRepo {
         PostgresWorkoutRepo {
-            client: &self.client,
+            pool: self.pool.clone(),
             user_id,
         }
     }
 }
 
-impl PostgresWorkoutRepo<'_> {
-    fn client(&self) -> Result<MutexGuard<'_, Client>, PostgresWorkoutRepoError> {
-        self.client
-            .lock()
-            .map_err(|_: PoisonError<MutexGuard<'_, Client>>| {
-                PostgresWorkoutRepoError::ConnectionPoisoned
-            })
-    }
+pub struct PostgresWorkoutRepo {
+    pool: Pool<Postgres>,
+    user_id: UserId,
+}
 
-    fn build_workout(
+impl PostgresWorkoutRepo {
+    async fn build_workout(
         &self,
         id: WorkoutId,
         name: Option<String>,
         start_date: OffsetDateTime,
         end_date: Option<OffsetDateTime>,
+        source: WorkoutSource,
     ) -> Result<Workout, PostgresWorkoutRepoError> {
         Ok(Workout {
-            entries: self.load_workout_entries(&id)?,
+            entries: self.load_workout_entries(&id).await?,
             id,
             name,
             start_date,
             end_date,
+            source,
         })
     }
 
-    fn load_workout_entries(
+    async fn load_workout_entries(
         &self,
         workout_id: &WorkoutId,
     ) -> Result<Vec<WorkoutExercise>, PostgresWorkoutRepoError> {
-        let mut client = self.client()?;
-        let rows = client.query(
+        let rows = sqlx::query(
             "SELECT exercise_id, notes
              FROM workout_exercises
              WHERE workout_id = $1 AND user_id = $2
              ORDER BY entry_order ASC",
-            &[workout_id.as_uuid(), &self.user_id.as_i64()],
-        )?;
-        drop(client);
+        )
+        .bind(workout_id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .fetch_all(&self.pool)
+        .await?;
 
-        rows.into_iter()
-            .map(|row| {
-                let exercise_id = ExerciseId::from_uuid(row.get("exercise_id"));
-                Ok(WorkoutExercise {
-                    sets: self.load_performed_sets(workout_id, &exercise_id)?,
-                    exercise_id,
-                    notes: row.get("notes"),
-                })
-            })
-            .collect()
+        let mut entries = Vec::with_capacity(rows.len());
+        for row in rows {
+            let exercise_id = ExerciseId::from_uuid(row.get("exercise_id"));
+            let sets = self.load_performed_sets(workout_id, &exercise_id).await?;
+            entries.push(WorkoutExercise {
+                sets,
+                exercise_id,
+                notes: row.get("notes"),
+            });
+        }
+        Ok(entries)
     }
 
-    fn load_performed_sets(
+    async fn load_performed_sets(
         &self,
         workout_id: &WorkoutId,
         exercise_id: &ExerciseId,
     ) -> Result<Vec<PerformedSet>, PostgresWorkoutRepoError> {
-        let mut client = self.client()?;
-        let rows = client.query(
+        let rows = sqlx::query(
             "SELECT reps, load_type, weight_value, weight_units
              FROM performed_sets
              WHERE workout_id = $1 AND user_id = $2 AND exercise_id = $3
              ORDER BY set_order ASC",
-            &[workout_id.as_uuid(), &self.user_id.as_i64(), exercise_id.as_uuid()],
-        )?;
+        )
+        .bind(workout_id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .bind(exercise_id.as_uuid())
+        .fetch_all(&self.pool)
+        .await?;
 
         rows.into_iter()
-            .map(stored_set_from_row)
-            .map(|result| result.and_then(StoredSet::into_domain))
+            .map(|row| stored_set_from_row(row).into_domain())
             .collect()
     }
 }
 
-impl WorkoutRepo for PostgresWorkoutRepo<'_> {
+#[async_trait::async_trait]
+impl WorkoutRepo for PostgresWorkoutRepo {
     type RepoError = PostgresWorkoutRepoError;
 
-    fn get_all(&self) -> Result<Vec<Workout>, Self::RepoError> {
-        let mut client = self.client()?;
-        let rows = client.query(
-            "SELECT id, name, start_date, end_date
+    async fn get_all(&self) -> Result<Vec<Workout>, Self::RepoError> {
+        let rows = sqlx::query(
+            "SELECT id, name, start_date, end_date, source
              FROM workouts
              WHERE user_id = $1
              ORDER BY start_date DESC",
-            &[&self.user_id.as_i64()],
-        )?;
-        drop(client);
+        )
+        .bind(self.user_id.as_i64())
+        .fetch_all(&self.pool)
+        .await?;
 
-        rows.into_iter()
-            .map(workout_header_from_row)
-            .map(|result| {
-                result.and_then(|(id, name, start_date, end_date)| {
-                    self.build_workout(id, name, start_date, end_date)
-                })
-            })
-            .collect()
+        let mut workouts = Vec::with_capacity(rows.len());
+        for row in rows {
+            let (id, name, start_date, end_date, source) = workout_header_from_row(row);
+            workouts.push(self.build_workout(id, name, start_date, end_date, source).await?);
+        }
+        Ok(workouts)
     }
 
-    fn get_by_id(&self, id: &WorkoutId) -> Result<Option<Workout>, Self::RepoError> {
-        let mut client = self.client()?;
-        let row = client.query_opt(
-            "SELECT id, name, start_date, end_date
+    async fn get_by_id(&self, id: &WorkoutId) -> Result<Option<Workout>, Self::RepoError> {
+        let row = sqlx::query(
+            "SELECT id, name, start_date, end_date, source
              FROM workouts
              WHERE id = $1 AND user_id = $2",
-            &[id.as_uuid(), &self.user_id.as_i64()],
-        )?;
-        drop(client);
+        )
+        .bind(id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .fetch_optional(&self.pool)
+        .await?;
 
-        row.map(workout_header_from_row)
-            .transpose()?
-            .map(|(id, name, start_date, end_date)| self.build_workout(id, name, start_date, end_date))
-            .transpose()
+        match row {
+            None => Ok(None),
+            Some(r) => {
+                let (id, name, start_date, end_date, source) = workout_header_from_row(r);
+                Ok(Some(
+                    self.build_workout(id, name, start_date, end_date, source)
+                        .await?,
+                ))
+            }
+        }
     }
 
-    fn save(&self, workout: &Workout) -> Result<(), Self::RepoError> {
-        let mut client = self.client()?;
-        let mut tx = client.transaction()?;
+    async fn save(&self, workout: &Workout) -> Result<(), Self::RepoError> {
+        let mut tx = self.pool.begin().await?;
+        let pg_source = PgWorkoutSource::from(workout.source);
 
-        tx.execute(
-            "INSERT INTO workouts (id, user_id, name, start_date, end_date)
-             VALUES ($1, $2, $3, $4, $5)
+        sqlx::query(
+            "INSERT INTO workouts (id, user_id, name, start_date, end_date, source)
+             VALUES ($1, $2, $3, $4, $5, $6)
              ON CONFLICT (id, user_id) DO UPDATE SET
                 name = EXCLUDED.name,
                 start_date = EXCLUDED.start_date,
-                end_date = EXCLUDED.end_date",
-            &[
-                workout.id.as_uuid(),
-                &self.user_id.as_i64(),
-                &workout.name,
-                &workout.start_date,
-                &workout.end_date,
-            ],
-        )?;
+                end_date = EXCLUDED.end_date,
+                source = EXCLUDED.source",
+        )
+        .bind(workout.id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .bind(&workout.name)
+        .bind(workout.start_date)
+        .bind(workout.end_date)
+        .bind(pg_source)
+        .execute(&mut *tx)
+        .await?;
 
-        tx.execute(
+        sqlx::query(
             "DELETE FROM performed_sets WHERE workout_id = $1 AND user_id = $2",
-            &[workout.id.as_uuid(), &self.user_id.as_i64()],
-        )?;
-        tx.execute(
+        )
+        .bind(workout.id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
             "DELETE FROM workout_exercises WHERE workout_id = $1 AND user_id = $2",
-            &[workout.id.as_uuid(), &self.user_id.as_i64()],
-        )?;
+        )
+        .bind(workout.id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .execute(&mut *tx)
+        .await?;
 
         for (entry_order, entry) in workout.entries.iter().enumerate() {
             let entry_order = to_i32(entry_order, "entry_order")?;
-            tx.execute(
+            sqlx::query(
                 "INSERT INTO workout_exercises (workout_id, user_id, exercise_id, entry_order, notes)
                  VALUES ($1, $2, $3, $4, $5)",
-                &[
-                    workout.id.as_uuid(),
-                    &self.user_id.as_i64(),
-                    entry.exercise_id.as_uuid(),
-                    &entry_order,
-                    &entry.notes,
-                ],
-            )?;
+            )
+            .bind(workout.id.as_uuid())
+            .bind(self.user_id.as_i64())
+            .bind(entry.exercise_id.as_uuid())
+            .bind(entry_order)
+            .bind(&entry.notes)
+            .execute(&mut *tx)
+            .await?;
 
             for (set_order, set) in entry.sets.iter().enumerate() {
                 let stored = StoredSet::from_domain(set)?;
                 let set_order = to_i32(set_order, "set_order")?;
-                tx.execute(
+                sqlx::query(
                     "INSERT INTO performed_sets (
                         workout_id,
                         user_id,
@@ -229,54 +231,56 @@ impl WorkoutRepo for PostgresWorkoutRepo<'_> {
                         weight_units
                      )
                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-                    &[
-                        workout.id.as_uuid(),
-                        &self.user_id.as_i64(),
-                        entry.exercise_id.as_uuid(),
-                        &set_order,
-                        &stored.reps,
-                        &stored.load_type,
-                        &stored.weight_value,
-                        &stored.weight_units,
-                    ],
-                )?;
+                )
+                .bind(workout.id.as_uuid())
+                .bind(self.user_id.as_i64())
+                .bind(entry.exercise_id.as_uuid())
+                .bind(set_order)
+                .bind(stored.reps)
+                .bind(stored.load_type)
+                .bind(stored.weight_value)
+                .bind(stored.weight_units)
+                .execute(&mut *tx)
+                .await?;
             }
         }
 
-        tx.commit()?;
+        tx.commit().await?;
         Ok(())
     }
 
-    fn add_exercise(
+    async fn add_exercise(
         &self,
         workout_id: &WorkoutId,
         exercise: &WorkoutExercise,
     ) -> Result<(), Self::RepoError> {
-        let mut client = self.client()?;
-        let mut tx = client.transaction()?;
-        let entry_order: i64 = tx.query_one(
+        let mut tx = self.pool.begin().await?;
+
+        let entry_order: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM workout_exercises WHERE workout_id = $1 AND user_id = $2",
-            &[workout_id.as_uuid(), &self.user_id.as_i64()],
-        )?
-        .get(0);
+        )
+        .bind(workout_id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .fetch_one(&mut *tx)
+        .await?;
         let entry_order = count_to_i32(entry_order, "entry_order")?;
 
-        tx.execute(
+        sqlx::query(
             "INSERT INTO workout_exercises (workout_id, user_id, exercise_id, entry_order, notes)
              VALUES ($1, $2, $3, $4, $5)",
-            &[
-                workout_id.as_uuid(),
-                &self.user_id.as_i64(),
-                exercise.exercise_id.as_uuid(),
-                &entry_order,
-                &exercise.notes,
-            ],
-        )?;
+        )
+        .bind(workout_id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .bind(exercise.exercise_id.as_uuid())
+        .bind(entry_order)
+        .bind(&exercise.notes)
+        .execute(&mut *tx)
+        .await?;
 
         for (set_order, set) in exercise.sets.iter().enumerate() {
             let stored = StoredSet::from_domain(set)?;
             let set_order = to_i32(set_order, "set_order")?;
-            tx.execute(
+            sqlx::query(
                 "INSERT INTO performed_sets (
                     workout_id,
                     user_id,
@@ -288,41 +292,43 @@ impl WorkoutRepo for PostgresWorkoutRepo<'_> {
                     weight_units
                  )
                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-                &[
-                    workout_id.as_uuid(),
-                    &self.user_id.as_i64(),
-                    exercise.exercise_id.as_uuid(),
-                    &set_order,
-                    &stored.reps,
-                    &stored.load_type,
-                    &stored.weight_value,
-                    &stored.weight_units,
-                ],
-            )?;
+            )
+            .bind(workout_id.as_uuid())
+            .bind(self.user_id.as_i64())
+            .bind(exercise.exercise_id.as_uuid())
+            .bind(set_order)
+            .bind(stored.reps)
+            .bind(stored.load_type)
+            .bind(stored.weight_value)
+            .bind(stored.weight_units)
+            .execute(&mut *tx)
+            .await?;
         }
 
-        tx.commit()?;
+        tx.commit().await?;
         Ok(())
     }
 
-    fn add_set(
+    async fn add_set(
         &self,
         workout_id: &WorkoutId,
         exercise_id: &ExerciseId,
         set: &PerformedSet,
     ) -> Result<(), Self::RepoError> {
         let stored = StoredSet::from_domain(set)?;
-        let mut client = self.client()?;
-        let set_order: i64 = client
-            .query_one(
-                "SELECT COUNT(*) FROM performed_sets
-                 WHERE workout_id = $1 AND user_id = $2 AND exercise_id = $3",
-                &[workout_id.as_uuid(), &self.user_id.as_i64(), exercise_id.as_uuid()],
-            )?
-            .get(0);
+
+        let set_order: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM performed_sets
+             WHERE workout_id = $1 AND user_id = $2 AND exercise_id = $3",
+        )
+        .bind(workout_id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .bind(exercise_id.as_uuid())
+        .fetch_one(&self.pool)
+        .await?;
         let set_order = count_to_i32(set_order, "set_order")?;
 
-        client.execute(
+        sqlx::query(
             "INSERT INTO performed_sets (
                 workout_id,
                 user_id,
@@ -334,198 +340,217 @@ impl WorkoutRepo for PostgresWorkoutRepo<'_> {
                 weight_units
              )
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-            &[
-                workout_id.as_uuid(),
-                &self.user_id.as_i64(),
-                exercise_id.as_uuid(),
-                &set_order,
-                &stored.reps,
-                &stored.load_type,
-                &stored.weight_value,
-                &stored.weight_units,
-            ],
-        )?;
+        )
+        .bind(workout_id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .bind(exercise_id.as_uuid())
+        .bind(set_order)
+        .bind(stored.reps)
+        .bind(stored.load_type)
+        .bind(stored.weight_value)
+        .bind(stored.weight_units)
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
 
-    fn get_by_date(&self, date: Date) -> Result<Vec<Workout>, Self::RepoError> {
-        let mut client = self.client()?;
-        let rows = client.query(
-            "SELECT id, name, start_date, end_date
+    async fn get_by_date(&self, date: Date) -> Result<Vec<Workout>, Self::RepoError> {
+        let rows = sqlx::query(
+            "SELECT id, name, start_date, end_date, source
              FROM workouts
              WHERE user_id = $1 AND start_date::date = $2
              ORDER BY start_date DESC",
-            &[&self.user_id.as_i64(), &date],
-        )?;
-        drop(client);
+        )
+        .bind(self.user_id.as_i64())
+        .bind(date)
+        .fetch_all(&self.pool)
+        .await?;
 
-        rows.into_iter()
-            .map(workout_header_from_row)
-            .map(|result| {
-                result.and_then(|(id, name, start_date, end_date)| {
-                    self.build_workout(id, name, start_date, end_date)
-                })
-            })
-            .collect()
+        let mut workouts = Vec::with_capacity(rows.len());
+        for row in rows {
+            let (id, name, start_date, end_date, source) = workout_header_from_row(row);
+            workouts.push(self.build_workout(id, name, start_date, end_date, source).await?);
+        }
+        Ok(workouts)
     }
 
-    fn get_latest(&self) -> Result<Option<Workout>, Self::RepoError> {
-        let mut client = self.client()?;
-        let row = client.query_opt(
-            "SELECT id, name, start_date, end_date
+    async fn get_latest(&self) -> Result<Option<Workout>, Self::RepoError> {
+        let row = sqlx::query(
+            "SELECT id, name, start_date, end_date, source
              FROM workouts
              WHERE user_id = $1
              ORDER BY start_date DESC
              LIMIT 1",
-            &[&self.user_id.as_i64()],
-        )?;
-        drop(client);
+        )
+        .bind(self.user_id.as_i64())
+        .fetch_optional(&self.pool)
+        .await?;
 
-        row.map(workout_header_from_row)
-            .transpose()?
-            .map(|(id, name, start_date, end_date)| self.build_workout(id, name, start_date, end_date))
-            .transpose()
+        match row {
+            None => Ok(None),
+            Some(r) => {
+                let (id, name, start_date, end_date, source) = workout_header_from_row(r);
+                Ok(Some(
+                    self.build_workout(id, name, start_date, end_date, source)
+                        .await?,
+                ))
+            }
+        }
     }
 
-    fn get_last_n(&self, n: usize) -> Result<Vec<Workout>, Self::RepoError> {
+    async fn get_last_n(&self, n: usize) -> Result<Vec<Workout>, Self::RepoError> {
         let limit = to_i64(n, "limit")?;
-        let mut client = self.client()?;
-        let rows = client.query(
-            "SELECT id, name, start_date, end_date
+        let rows = sqlx::query(
+            "SELECT id, name, start_date, end_date, source
              FROM workouts
              WHERE user_id = $1
              ORDER BY start_date DESC
              LIMIT $2",
-            &[&self.user_id.as_i64(), &limit],
-        )?;
-        drop(client);
+        )
+        .bind(self.user_id.as_i64())
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
 
-        rows.into_iter()
-            .map(workout_header_from_row)
-            .map(|result| {
-                result.and_then(|(id, name, start_date, end_date)| {
-                    self.build_workout(id, name, start_date, end_date)
-                })
-            })
-            .collect()
+        let mut workouts = Vec::with_capacity(rows.len());
+        for row in rows {
+            let (id, name, start_date, end_date, source) = workout_header_from_row(row);
+            workouts.push(self.build_workout(id, name, start_date, end_date, source).await?);
+        }
+        Ok(workouts)
     }
 
-    fn delete(&self, id: &WorkoutId) -> Result<(), Self::RepoError> {
-        let mut client = self.client()?;
-        client.execute(
-            "DELETE FROM workouts WHERE id = $1 AND user_id = $2",
-            &[id.as_uuid(), &self.user_id.as_i64()],
-        )?;
+    async fn delete(&self, id: &WorkoutId) -> Result<(), Self::RepoError> {
+        sqlx::query("DELETE FROM workouts WHERE id = $1 AND user_id = $2")
+            .bind(id.as_uuid())
+            .bind(self.user_id.as_i64())
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
-    fn update_name(&self, id: &WorkoutId, name: Option<&str>) -> Result<(), Self::RepoError> {
-        let mut client = self.client()?;
-        client.execute(
-            "UPDATE workouts SET name = $3 WHERE id = $1 AND user_id = $2",
-            &[id.as_uuid(), &self.user_id.as_i64(), &name],
-        )?;
+    async fn update_name(&self, id: &WorkoutId, name: Option<&str>) -> Result<(), Self::RepoError> {
+        sqlx::query("UPDATE workouts SET name = $3 WHERE id = $1 AND user_id = $2")
+            .bind(id.as_uuid())
+            .bind(self.user_id.as_i64())
+            .bind(name)
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
-    fn remove_exercise(
+    async fn remove_exercise(
         &self,
         workout_id: &WorkoutId,
         exercise_id: &ExerciseId,
     ) -> Result<(), Self::RepoError> {
-        let mut client = self.client()?;
-        let mut tx = client.transaction()?;
-        let entry_order: Option<i32> = tx
-            .query_opt(
-                "SELECT entry_order
-                 FROM workout_exercises
-                 WHERE workout_id = $1 AND user_id = $2 AND exercise_id = $3",
-                &[workout_id.as_uuid(), &self.user_id.as_i64(), exercise_id.as_uuid()],
-            )?
-            .map(|row| row.get("entry_order"));
+        let mut tx = self.pool.begin().await?;
+
+        let entry_order: Option<i32> = sqlx::query_scalar(
+            "SELECT entry_order
+             FROM workout_exercises
+             WHERE workout_id = $1 AND user_id = $2 AND exercise_id = $3",
+        )
+        .bind(workout_id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .bind(exercise_id.as_uuid())
+        .fetch_optional(&mut *tx)
+        .await?;
 
         let Some(entry_order) = entry_order else {
-            tx.commit()?;
+            tx.commit().await?;
             return Ok(());
         };
 
-        tx.execute(
+        sqlx::query(
             "DELETE FROM workout_exercises
              WHERE workout_id = $1 AND user_id = $2 AND exercise_id = $3",
-            &[workout_id.as_uuid(), &self.user_id.as_i64(), exercise_id.as_uuid()],
-        )?;
-        tx.execute(
+        )
+        .bind(workout_id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .bind(exercise_id.as_uuid())
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query(
             "UPDATE workout_exercises
              SET entry_order = entry_order - 1
              WHERE workout_id = $1 AND user_id = $2 AND entry_order > $3",
-            &[workout_id.as_uuid(), &self.user_id.as_i64(), &entry_order],
-        )?;
-        tx.commit()?;
+        )
+        .bind(workout_id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .bind(entry_order)
+        .execute(&mut *tx)
+        .await?;
+
+        tx.commit().await?;
         Ok(())
     }
 
-    fn remove_exercise_from_all(&self, exercise_id: &ExerciseId) -> Result<(), Self::RepoError> {
-        let mut client = self.client()?;
-        client.execute(
+    async fn remove_exercise_from_all(&self, exercise_id: &ExerciseId) -> Result<(), Self::RepoError> {
+        sqlx::query(
             "DELETE FROM workout_exercises WHERE exercise_id = $1 AND user_id = $2",
-            &[exercise_id.as_uuid(), &self.user_id.as_i64()],
-        )?;
+        )
+        .bind(exercise_id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 
-    fn remove_set(
+    async fn remove_set(
         &self,
         workout_id: &WorkoutId,
         exercise_id: &ExerciseId,
         set_index: usize,
     ) -> Result<(), Self::RepoError> {
         let set_order = to_i32(set_index, "set_order")?;
-        let mut client = self.client()?;
-        let mut tx = client.transaction()?;
-        let changed = tx.execute(
+        let mut tx = self.pool.begin().await?;
+
+        let result = sqlx::query(
             "DELETE FROM performed_sets
              WHERE workout_id = $1 AND user_id = $2 AND exercise_id = $3 AND set_order = $4",
-            &[
-                workout_id.as_uuid(),
-                &self.user_id.as_i64(),
-                exercise_id.as_uuid(),
-                &set_order,
-            ],
-        )?;
+        )
+        .bind(workout_id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .bind(exercise_id.as_uuid())
+        .bind(set_order)
+        .execute(&mut *tx)
+        .await?;
 
-        if changed > 0 {
-            tx.execute(
+        if result.rows_affected() > 0 {
+            sqlx::query(
                 "UPDATE performed_sets
                  SET set_order = set_order - 1
                  WHERE workout_id = $1 AND user_id = $2 AND exercise_id = $3 AND set_order > $4",
-                &[
-                    workout_id.as_uuid(),
-                    &self.user_id.as_i64(),
-                    exercise_id.as_uuid(),
-                    &set_order,
-                ],
-            )?;
+            )
+            .bind(workout_id.as_uuid())
+            .bind(self.user_id.as_i64())
+            .bind(exercise_id.as_uuid())
+            .bind(set_order)
+            .execute(&mut *tx)
+            .await?;
         }
 
-        tx.commit()?;
+        tx.commit().await?;
         Ok(())
     }
 
-    fn get_dates_in_range(&self, from: Date, to: Date) -> Result<Vec<Date>, Self::RepoError> {
-        let mut client = self.client()?;
-        let rows = client.query(
+    async fn get_dates_in_range(&self, from: Date, to: Date) -> Result<Vec<Date>, Self::RepoError> {
+        let rows = sqlx::query(
             "SELECT DISTINCT start_date::date AS workout_date
              FROM workouts
              WHERE user_id = $1 AND start_date::date >= $2 AND start_date::date <= $3
              ORDER BY workout_date ASC",
-            &[&self.user_id.as_i64(), &from, &to],
-        )?;
+        )
+        .bind(self.user_id.as_i64())
+        .bind(from)
+        .bind(to)
+        .fetch_all(&self.pool)
+        .await?;
 
-        Ok(rows
-            .into_iter()
-            .map(|row| row.get("workout_date"))
-            .collect())
+        Ok(rows.into_iter().map(|row| row.get("workout_date")).collect())
     }
 }
 
@@ -582,25 +607,32 @@ impl StoredSet {
     }
 }
 
-fn stored_set_from_row(row: Row) -> Result<StoredSet, PostgresWorkoutRepoError> {
-    Ok(StoredSet {
+fn stored_set_from_row(row: PgRow) -> StoredSet {
+    StoredSet {
         reps: row.get("reps"),
         load_type: row.get("load_type"),
         weight_value: row.get("weight_value"),
         weight_units: row.get("weight_units"),
-    })
+    }
 }
 
 fn workout_header_from_row(
-    row: Row,
-) -> Result<(WorkoutId, Option<String>, OffsetDateTime, Option<OffsetDateTime>), PostgresWorkoutRepoError>
-{
-    Ok((
+    row: PgRow,
+) -> (
+    WorkoutId,
+    Option<String>,
+    OffsetDateTime,
+    Option<OffsetDateTime>,
+    WorkoutSource,
+) {
+    let pg_source: PgWorkoutSource = row.get("source");
+    (
         WorkoutId::from_uuid(row.get("id")),
         row.get("name"),
         row.get("start_date"),
         row.get("end_date"),
-    ))
+        pg_source.into(),
+    )
 }
 
 fn to_i32(value: usize, field: &'static str) -> Result<i32, PostgresWorkoutRepoError> {

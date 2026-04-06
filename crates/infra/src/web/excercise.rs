@@ -5,7 +5,7 @@ use domain::excercise::{Exercise, ExerciseId, ExerciseKind, ExerciseSource, Musc
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
-use super::{ApiError, AppState, AuthUser, lock_dbs};
+use super::{ApiError, AppState, AuthUser};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -86,10 +86,14 @@ async fn list_exercises(
     user: AuthUser,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<ExcerciseResponse>>, ApiError> {
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.gym_app(user.0);
-    app.seed_built_in_excercises().map_err(ApiError::internal)?;
-    let exercises = app.get_all_excercises().map_err(ApiError::internal)?;
+    let app = state.databases.gym_app(user.0);
+    app.seed_built_in_excercises()
+        .await
+        .map_err(ApiError::internal)?;
+    let exercises = app
+        .get_all_excercises()
+        .await
+        .map_err(ApiError::internal)?;
 
     Ok(Json(exercises.into_iter().map(Into::into).collect()))
 }
@@ -112,9 +116,11 @@ async fn create_exercise(
         })
         .transpose()?;
 
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.gym_app(user.0);
-    app.add_new_excercise(body.name, muscle_group, secondary, kind)
+    state
+        .databases
+        .gym_app(user.0)
+        .add_new_excercise(body.name, muscle_group, secondary, kind)
+        .await
         .map_err(ApiError::internal)?;
 
     Ok(StatusCode::CREATED)
@@ -130,8 +136,11 @@ async fn delete_exercise(
     Path(exercise_id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
     let id = ExerciseId::from_uuid(parse_uuid(&exercise_id)?);
-    let dbs = lock_dbs(&state)?;
-    let app = dbs.gym_app(user.0);
-    app.delete_excercise(&id).map_err(ApiError::internal)?;
+    state
+        .databases
+        .gym_app(user.0)
+        .delete_excercise(&id)
+        .await
+        .map_err(ApiError::internal)?;
     Ok(StatusCode::NO_CONTENT)
 }

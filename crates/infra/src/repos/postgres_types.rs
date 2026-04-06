@@ -1,69 +1,69 @@
 use domain::{
-    excercise::{ExerciseKind, ExerciseSource, MuscleGroup},
+    excercise::{ExerciseKind, ExerciseSource, MuscleGroup, WorkoutSource},
     types::{HeightUnits, WeightUnits},
 };
-use postgres_types::{FromSql, ToSql};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ToSql, FromSql)]
-#[postgres(name = "exercise_kind")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "exercise_kind", rename_all = "lowercase")]
 pub(crate) enum PgExerciseKind {
-    #[postgres(name = "weighted")]
     Weighted,
-    #[postgres(name = "bodyweight")]
+    #[sqlx(rename = "bodyweight")]
     BodyWeight,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ToSql, FromSql)]
-#[postgres(name = "exercise_source")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "exercise_source")]
 pub(crate) enum PgExerciseSource {
-    #[postgres(name = "built_in")]
+    #[sqlx(rename = "built_in")]
     BuiltIn,
-    #[postgres(name = "user_defined")]
+    #[sqlx(rename = "user_defined")]
     UserDefined,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ToSql, FromSql)]
-#[postgres(name = "muscle_group")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "muscle_group", rename_all = "lowercase")]
 pub(crate) enum PgMuscleGroup {
-    #[postgres(name = "chest")]
     Chest,
-    #[postgres(name = "back")]
     Back,
-    #[postgres(name = "shoulders")]
     Shoulders,
-    #[postgres(name = "arms")]
     Arms,
-    #[postgres(name = "legs")]
     Legs,
-    #[postgres(name = "core")]
     Core,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ToSql, FromSql)]
-#[postgres(name = "weight_unit")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "weight_unit")]
 pub(crate) enum PgWeightUnits {
-    #[postgres(name = "kg")]
+    #[sqlx(rename = "kg")]
     Kilograms,
-    #[postgres(name = "lbs")]
+    #[sqlx(rename = "lbs")]
     Pounds,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ToSql, FromSql)]
-#[postgres(name = "height_unit")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "height_unit")]
 pub(crate) enum PgHeightUnits {
-    #[postgres(name = "cm")]
+    #[sqlx(rename = "cm")]
     Centimeters,
-    #[postgres(name = "in")]
+    #[sqlx(rename = "in")]
     Inches,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, ToSql, FromSql)]
-#[postgres(name = "load_type")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "load_type", rename_all = "lowercase")]
 pub(crate) enum PgLoadType {
-    #[postgres(name = "weighted")]
     Weighted,
-    #[postgres(name = "bodyweight")]
+    #[sqlx(rename = "bodyweight")]
     BodyWeight,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "workout_source")]
+pub(crate) enum PgWorkoutSource {
+    #[sqlx(rename = "manual")]
+    Manual,
+    #[sqlx(rename = "ai_generated")]
+    AiGenerated,
 }
 
 impl From<ExerciseKind> for PgExerciseKind {
@@ -124,6 +124,24 @@ impl From<PgMuscleGroup> for MuscleGroup {
             PgMuscleGroup::Arms => Self::Arms,
             PgMuscleGroup::Legs => Self::Legs,
             PgMuscleGroup::Core => Self::Core,
+        }
+    }
+}
+
+impl From<WorkoutSource> for PgWorkoutSource {
+    fn from(value: WorkoutSource) -> Self {
+        match value {
+            WorkoutSource::Manual => Self::Manual,
+            WorkoutSource::AiGenerated => Self::AiGenerated,
+        }
+    }
+}
+
+impl From<PgWorkoutSource> for WorkoutSource {
+    fn from(value: PgWorkoutSource) -> Self {
+        match value {
+            PgWorkoutSource::Manual => Self::Manual,
+            PgWorkoutSource::AiGenerated => Self::AiGenerated,
         }
     }
 }

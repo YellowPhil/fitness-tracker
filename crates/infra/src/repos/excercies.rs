@@ -1,85 +1,64 @@
-use std::sync::{MutexGuard, PoisonError};
-
 use domain::{
     excercise::{Exercise, ExerciseId, ExerciseKind, ExerciseMetadata, MuscleGroup},
     traits::ExcerciseRepo,
     types::UserId,
 };
-use postgres::{Client, Row};
+use sqlx::{Pool, Postgres, Row, postgres::PgRow};
 
-use super::{
-    postgres::{SharedClient, connect},
-    postgres_types::{
-        PgExerciseKind, PgExerciseSource, PgMuscleGroup, from_pg_muscle_groups, to_pg_muscle_groups,
-    },
+use super::postgres_types::{
+    PgExerciseKind, PgExerciseSource, PgMuscleGroup, from_pg_muscle_groups, to_pg_muscle_groups,
 };
 
 #[derive(Debug, thiserror::Error)]
 pub enum PostgresExcerciseRepoError {
     #[error("postgres error: {0}")]
-    Postgres(#[from] postgres::Error),
-    #[error("postgres connection lock poisoned")]
-    ConnectionPoisoned,
+    Postgres(#[from] sqlx::Error),
 }
 
 pub struct PostgresExcerciseDb {
-    client: SharedClient,
-}
-
-pub struct PostgresExcerciseRepo<'db> {
-    client: &'db SharedClient,
-    user_id: UserId,
+    pool: Pool<Postgres>,
 }
 
 impl PostgresExcerciseDb {
-    pub fn open(url: &str) -> Result<Self, PostgresExcerciseRepoError> {
-        Ok(Self {
-            client: connect(url)?,
-        })
+    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
+        Self { pool }
     }
 
-    pub(crate) fn new(client: SharedClient) -> Self {
-        Self { client }
-    }
-
-    pub fn for_user(&self, user_id: UserId) -> PostgresExcerciseRepo<'_> {
+    pub fn for_user(&self, user_id: UserId) -> PostgresExcerciseRepo {
         PostgresExcerciseRepo {
-            client: &self.client,
+            pool: self.pool.clone(),
             user_id,
         }
     }
 }
 
-impl PostgresExcerciseRepo<'_> {
-    fn client(&self) -> Result<MutexGuard<'_, Client>, PostgresExcerciseRepoError> {
-        self.client
-            .lock()
-            .map_err(|_: PoisonError<MutexGuard<'_, Client>>| {
-                PostgresExcerciseRepoError::ConnectionPoisoned
-            })
-    }
+pub struct PostgresExcerciseRepo {
+    pool: Pool<Postgres>,
+    user_id: UserId,
 }
 
-impl ExcerciseRepo for PostgresExcerciseRepo<'_> {
+#[async_trait::async_trait]
+impl ExcerciseRepo for PostgresExcerciseRepo {
     type RepoError = PostgresExcerciseRepoError;
 
-    fn get_by_id(&self, id: &ExerciseId) -> Result<Option<Exercise>, Self::RepoError> {
-        let mut client = self.client()?;
-        let row = client.query_opt(
+    async fn get_by_id(&self, id: &ExerciseId) -> Result<Option<Exercise>, Self::RepoError> {
+        let row = sqlx::query(
             "SELECT id, name, kind, muscle_group, secondary_muscle_groups, source
              FROM exercises
              WHERE id = $1 AND user_id = $2",
-            &[id.as_uuid(), &self.user_id.as_i64()],
-        )?;
+        )
+        .bind(id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .fetch_optional(&self.pool)
+        .await?;
 
         Ok(row.map(exercise_from_row))
     }
 
-    fn save(&self, exercise: &Exercise) -> Result<(), Self::RepoError> {
-        let mut client = self.client()?;
+    async fn save(&self, exercise: &Exercise) -> Result<(), Self::RepoError> {
         let secondary_muscle_groups = to_pg_muscle_groups(&exercise.secondary_muscle_groups);
 
-        client.execute(
+        sqlx::query(
             "INSERT INTO exercises (
                 id,
                 user_id,
@@ -96,50 +75,53 @@ impl ExcerciseRepo for PostgresExcerciseRepo<'_> {
                 muscle_group = EXCLUDED.muscle_group,
                 secondary_muscle_groups = EXCLUDED.secondary_muscle_groups,
                 source = EXCLUDED.source",
-            &[
-                exercise.id.as_uuid(),
-                &self.user_id.as_i64(),
-                &exercise.name,
-                &PgExerciseKind::from(exercise.kind),
-                &PgMuscleGroup::from(exercise.muscle_group),
-                &secondary_muscle_groups,
-                &PgExerciseSource::from(exercise.source),
-            ],
-        )?;
+        )
+        .bind(exercise.id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .bind(&exercise.name)
+        .bind(PgExerciseKind::from(exercise.kind))
+        .bind(PgMuscleGroup::from(exercise.muscle_group))
+        .bind(secondary_muscle_groups)
+        .bind(PgExerciseSource::from(exercise.source))
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
 
-    fn get_by_muscle_group(
+    async fn get_by_muscle_group(
         &self,
         muscle_group: MuscleGroup,
     ) -> Result<Vec<Exercise>, Self::RepoError> {
-        let mut client = self.client()?;
-        let rows = client.query(
+        let rows = sqlx::query(
             "SELECT id, name, kind, muscle_group, secondary_muscle_groups, source
              FROM exercises
              WHERE user_id = $1 AND muscle_group = $2
              ORDER BY name ASC",
-            &[&self.user_id.as_i64(), &PgMuscleGroup::from(muscle_group)],
-        )?;
+        )
+        .bind(self.user_id.as_i64())
+        .bind(PgMuscleGroup::from(muscle_group))
+        .fetch_all(&self.pool)
+        .await?;
 
         Ok(rows.into_iter().map(exercise_from_row).collect())
     }
 
-    fn get_all(&self) -> Result<Vec<Exercise>, Self::RepoError> {
-        let mut client = self.client()?;
-        let rows = client.query(
+    async fn get_all(&self) -> Result<Vec<Exercise>, Self::RepoError> {
+        let rows = sqlx::query(
             "SELECT id, name, kind, muscle_group, secondary_muscle_groups, source
              FROM exercises
              WHERE user_id = $1
              ORDER BY name ASC",
-            &[&self.user_id.as_i64()],
-        )?;
+        )
+        .bind(self.user_id.as_i64())
+        .fetch_all(&self.pool)
+        .await?;
 
         Ok(rows.into_iter().map(exercise_from_row).collect())
     }
 
-    fn get_metadata_by_ids(
+    async fn get_metadata_by_ids(
         &self,
         ids: &[ExerciseId],
     ) -> Result<Vec<ExerciseMetadata>, Self::RepoError> {
@@ -147,45 +129,47 @@ impl ExcerciseRepo for PostgresExcerciseRepo<'_> {
             return Ok(vec![]);
         }
 
-        let ids: Vec<_> = ids.iter().map(|id| *id.as_uuid()).collect();
-        let mut client = self.client()?;
-        let rows = client.query(
+        let uuids: Vec<_> = ids.iter().map(|id| *id.as_uuid()).collect();
+        let rows = sqlx::query(
             "SELECT id, name, muscle_group, secondary_muscle_groups
              FROM exercises
              WHERE user_id = $1 AND id = ANY($2)
              ORDER BY name ASC",
-            &[&self.user_id.as_i64(), &ids],
-        )?;
+        )
+        .bind(self.user_id.as_i64())
+        .bind(&uuids[..])
+        .fetch_all(&self.pool)
+        .await?;
 
         Ok(rows.into_iter().map(metadata_from_row).collect())
     }
 
-    fn delete(&self, id: &ExerciseId) -> Result<(), Self::RepoError> {
-        let mut client = self.client()?;
-        client.execute(
-            "DELETE FROM exercises WHERE id = $1 AND user_id = $2",
-            &[id.as_uuid(), &self.user_id.as_i64()],
-        )?;
+    async fn delete(&self, id: &ExerciseId) -> Result<(), Self::RepoError> {
+        sqlx::query("DELETE FROM exercises WHERE id = $1 AND user_id = $2")
+            .bind(id.as_uuid())
+            .bind(self.user_id.as_i64())
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 }
 
-fn exercise_from_row(row: Row) -> Exercise {
+fn exercise_from_row(row: PgRow) -> Exercise {
     Exercise {
         id: ExerciseId::from_uuid(row.get("id")),
         name: row.get("name"),
-        kind: ExerciseKind::from(row.get::<_, PgExerciseKind>("kind")),
-        muscle_group: row.get::<_, PgMuscleGroup>("muscle_group").into(),
+        kind: ExerciseKind::from(row.get::<PgExerciseKind, _>("kind")),
+        muscle_group: row.get::<PgMuscleGroup, _>("muscle_group").into(),
         secondary_muscle_groups: from_pg_muscle_groups(row.get("secondary_muscle_groups")),
-        source: row.get::<_, PgExerciseSource>("source").into(),
+        source: row.get::<PgExerciseSource, _>("source").into(),
     }
 }
 
-fn metadata_from_row(row: Row) -> ExerciseMetadata {
+fn metadata_from_row(row: PgRow) -> ExerciseMetadata {
     ExerciseMetadata {
         id: ExerciseId::from_uuid(row.get("id")),
         name: row.get("name"),
-        muscle_group: row.get::<_, PgMuscleGroup>("muscle_group").into(),
+        muscle_group: row.get::<PgMuscleGroup, _>("muscle_group").into(),
         secondary_muscle_groups: from_pg_muscle_groups(row.get("secondary_muscle_groups")),
     }
 }

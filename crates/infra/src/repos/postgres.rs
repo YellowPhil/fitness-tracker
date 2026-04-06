@@ -1,17 +1,17 @@
-use std::sync::{Arc, Mutex};
+use sqlx::{Pool, Postgres};
+use sqlx::postgres::PgPoolOptions;
 
-use postgres::{Client, NoTls};
-
-pub(crate) type SharedClient = Arc<Mutex<Client>>;
-
-pub(crate) fn connect(url: &str) -> Result<SharedClient, postgres::Error> {
-    let mut client = Client::connect(url, NoTls)?;
-    init_schema(&mut client)?;
-    Ok(Arc::new(Mutex::new(client)))
+pub(crate) async fn connect(url: &str) -> Result<Pool<Postgres>, sqlx::Error> {
+    let pool = PgPoolOptions::new()
+        .max_connections(10)
+        .connect(url)
+        .await?;
+    init_schema(&pool).await?;
+    Ok(pool)
 }
 
-fn init_schema(client: &mut Client) -> Result<(), postgres::Error> {
-    client.batch_execute(
+async fn init_schema(pool: &Pool<Postgres>) -> Result<(), sqlx::Error> {
+    sqlx::raw_sql(
         "
         DO $$
         BEGIN
@@ -61,6 +61,15 @@ fn init_schema(client: &mut Client) -> Result<(), postgres::Error> {
         END
         $$;
 
+        -- Labels must match `domain::excercise::workout_source::{MANUAL,AI_GENERATED}`.
+        DO $$
+        BEGIN
+            CREATE TYPE workout_source AS ENUM ('manual', 'ai_generated');
+        EXCEPTION
+            WHEN duplicate_object THEN NULL;
+        END
+        $$;
+
         CREATE TABLE IF NOT EXISTS exercises (
             id UUID NOT NULL,
             user_id BIGINT NOT NULL,
@@ -86,6 +95,9 @@ fn init_schema(client: &mut Client) -> Result<(), postgres::Error> {
 
         CREATE INDEX IF NOT EXISTS workouts_user_id_start_date_idx
             ON workouts (user_id, start_date DESC);
+
+        ALTER TABLE workouts
+            ADD COLUMN IF NOT EXISTS source workout_source NOT NULL DEFAULT 'manual'; -- workout_source::MANUAL
 
         CREATE TABLE IF NOT EXISTS workout_exercises (
             workout_id UUID NOT NULL,
@@ -134,7 +146,9 @@ fn init_schema(client: &mut Client) -> Result<(), postgres::Error> {
             age INTEGER NOT NULL CHECK (age >= 0)
         );
         ",
-    )?;
+    )
+    .execute(pool)
+    .await?;
 
     Ok(())
 }

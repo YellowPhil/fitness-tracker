@@ -1,23 +1,16 @@
-use std::sync::{MutexGuard, PoisonError};
-
 use domain::{
     health::HealthParams,
     traits::HealthRepo,
     types::{Height, HeightUnits, UserId, Weight, WeightUnits},
 };
-use postgres::Client;
+use sqlx::{Pool, Postgres, Row, postgres::PgRow};
 
-use super::{
-    postgres::{SharedClient, connect},
-    postgres_types::{PgHeightUnits, PgWeightUnits},
-};
+use super::postgres_types::{PgHeightUnits, PgWeightUnits};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PostgresHealthRepoError {
     #[error("postgres error: {0}")]
-    Postgres(#[from] postgres::Error),
-    #[error("postgres connection lock poisoned")]
-    ConnectionPoisoned,
+    Postgres(#[from] sqlx::Error),
     #[error("age value out of range for domain type: {0}")]
     InvalidAge(i32),
     #[error("age value exceeds supported range: {0}")]
@@ -25,72 +18,58 @@ pub enum PostgresHealthRepoError {
 }
 
 pub struct PostgresHealthDb {
-    client: SharedClient,
-}
-
-pub struct PostgresHealthRepo<'db> {
-    client: &'db SharedClient,
-    user_id: UserId,
+    pool: Pool<Postgres>,
 }
 
 impl PostgresHealthDb {
-    pub fn open(url: &str) -> Result<Self, PostgresHealthRepoError> {
-        Ok(Self {
-            client: connect(url)?,
-        })
+    pub(crate) fn new(pool: Pool<Postgres>) -> Self {
+        Self { pool }
     }
 
-    pub(crate) fn new(client: SharedClient) -> Self {
-        Self { client }
-    }
-
-    pub fn for_user(&self, user_id: UserId) -> PostgresHealthRepo<'_> {
+    pub fn for_user(&self, user_id: UserId) -> PostgresHealthRepo {
         PostgresHealthRepo {
-            client: &self.client,
+            pool: self.pool.clone(),
             user_id,
         }
     }
 }
 
-impl PostgresHealthRepo<'_> {
-    fn client(&self) -> Result<MutexGuard<'_, Client>, PostgresHealthRepoError> {
-        self.client
-            .lock()
-            .map_err(|_: PoisonError<MutexGuard<'_, Client>>| {
-                PostgresHealthRepoError::ConnectionPoisoned
-            })
-    }
+pub struct PostgresHealthRepo {
+    pool: Pool<Postgres>,
+    user_id: UserId,
 }
 
-impl HealthRepo for PostgresHealthRepo<'_> {
+#[async_trait::async_trait]
+impl HealthRepo for PostgresHealthRepo {
     type RepoError = PostgresHealthRepoError;
 
-    fn get_health(&self) -> Result<HealthParams, Self::RepoError> {
-        let mut client = self.client()?;
-        let row = client.query_opt(
+    async fn get_health(&self) -> Result<HealthParams, Self::RepoError> {
+        let row = sqlx::query(
             "SELECT weight_value, weight_units, height_value, height_units, age
              FROM health_params
              WHERE user_id = $1",
-            &[&self.user_id.as_i64()],
-        )?;
+        )
+        .bind(self.user_id.as_i64())
+        .fetch_optional(&self.pool)
+        .await?;
 
-        row.map(health_from_row).transpose().map(|params| {
-            params.unwrap_or_else(|| {
+        Ok(row
+            .map(health_from_row)
+            .transpose()?
+            .unwrap_or_else(|| {
                 HealthParams::new(
                     Height::new(170.0, HeightUnits::Centimeters),
                     Weight::new(70.0, WeightUnits::Kilograms),
                     25,
                 )
-            })
-        })
+            }))
     }
 
-    fn save(&self, params: &HealthParams) -> Result<(), Self::RepoError> {
+    async fn save(&self, params: &HealthParams) -> Result<(), Self::RepoError> {
         let age = i32::try_from(params.age)
             .map_err(|_| PostgresHealthRepoError::AgeOutOfRange(params.age))?;
-        let mut client = self.client()?;
 
-        client.execute(
+        sqlx::query(
             "INSERT INTO health_params (
                 user_id,
                 weight_value,
@@ -106,31 +85,31 @@ impl HealthRepo for PostgresHealthRepo<'_> {
                 height_value = EXCLUDED.height_value,
                 height_units = EXCLUDED.height_units,
                 age = EXCLUDED.age",
-            &[
-                &self.user_id.as_i64(),
-                &params.weight.value,
-                &PgWeightUnits::from(params.weight.units),
-                &params.height.value,
-                &PgHeightUnits::from(params.height.units),
-                &age,
-            ],
-        )?;
+        )
+        .bind(self.user_id.as_i64())
+        .bind(params.weight.value)
+        .bind(PgWeightUnits::from(params.weight.units))
+        .bind(params.height.value)
+        .bind(PgHeightUnits::from(params.height.units))
+        .bind(age)
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
 }
 
-fn health_from_row(row: postgres::Row) -> Result<HealthParams, PostgresHealthRepoError> {
+fn health_from_row(row: PgRow) -> Result<HealthParams, PostgresHealthRepoError> {
     let age: i32 = row.get("age");
 
     Ok(HealthParams::new(
         Height::new(
             row.get("height_value"),
-            HeightUnits::from(row.get::<_, PgHeightUnits>("height_units")),
+            HeightUnits::from(row.get::<PgHeightUnits, _>("height_units")),
         ),
         Weight::new(
             row.get("weight_value"),
-            WeightUnits::from(row.get::<_, PgWeightUnits>("weight_units")),
+            WeightUnits::from(row.get::<PgWeightUnits, _>("weight_units")),
         ),
         u32::try_from(age).map_err(|_| PostgresHealthRepoError::InvalidAge(age))?,
     ))

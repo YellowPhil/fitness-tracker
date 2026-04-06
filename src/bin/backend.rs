@@ -1,10 +1,10 @@
 use std::env;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
 use anyhow::Context;
 use fitness_tracker::init_tracing;
 use infra::{Databases, http_router};
-use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
 use tracing::instrument;
 
@@ -21,9 +21,12 @@ async fn main() {
 #[instrument(skip_all)]
 async fn run() -> anyhow::Result<()> {
     let postgres_url = env::var("POSTGRES_URL").context("read POSTGRES_URL")?;
-    let dbs = Arc::new(Mutex::new(
-        Databases::connect(&postgres_url).context("connect POSTGRES_URL")?,
-    ));
+
+    let dbs = Arc::new(
+        Databases::connect(&postgres_url)
+            .await
+            .context("connect POSTGRES_URL")?,
+    );
 
     let frontend_url = env::var("FRONTEND_URL").ok();
     if let Some(ref url) = frontend_url {
@@ -55,11 +58,27 @@ async fn run() -> anyhow::Result<()> {
         .parse()
         .context("parse BIND_ADDR")?;
 
+    let openai_api_key = env::var("OPENAI_API_KEY")
+        .ok()
+        .filter(|s| !s.trim().is_empty());
+
+    let allowed_user_ids = env::var("ALLOWED_USER_IDS")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| {
+            s.split(',')
+                .filter_map(|id| id.trim().parse::<i64>().ok())
+                .collect::<Vec<_>>()
+        })
+        .filter(|ids| !ids.is_empty());
+
     let app = http_router(
-        Arc::clone(&dbs),
+        dbs,
         frontend_url.as_deref(),
         bot_token,
         dev_skip_auth,
+        openai_api_key,
+        allowed_user_ids,
     );
     let listener = TcpListener::bind(addr)
         .await

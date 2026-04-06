@@ -11,21 +11,21 @@ impl<H: HealthRepo> HealthApp<H> {
     }
 
     #[instrument(skip(self), err)]
-    pub fn get_profile(&self) -> Result<HealthParams, H::RepoError> {
-        self.health_repo.get_health()
+    pub async fn get_profile(&self) -> Result<HealthParams, H::RepoError> {
+        self.health_repo.get_health().await
     }
 
     #[instrument(skip(self, params), err)]
-    pub fn update_profile(&self, params: HealthParams) -> Result<HealthParams, H::RepoError> {
-        self.health_repo.save(&params)?;
+    pub async fn update_profile(&self, params: HealthParams) -> Result<HealthParams, H::RepoError> {
+        self.health_repo.save(&params).await?;
         Ok(params)
     }
 
     #[instrument(skip(self, weight), err)]
-    pub fn update_weight(&self, weight: Weight) -> Result<HealthParams, H::RepoError> {
-        let mut current = self.health_repo.get_health()?;
+    pub async fn update_weight(&self, weight: Weight) -> Result<HealthParams, H::RepoError> {
+        let mut current = self.health_repo.get_health().await?;
         current.weight = weight;
-        self.health_repo.save(&current)?;
+        self.health_repo.save(&current).await?;
         Ok(current)
     }
 }
