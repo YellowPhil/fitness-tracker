@@ -41,11 +41,25 @@ export interface WorkoutExercise {
   notes?: string;
 }
 
+/**
+ * Single source of truth for API `WorkoutResponse.source` (must match Rust
+ * `domain::excercise::workout_source`).
+ */
+export const WORKOUT_SOURCE_API = {
+  manual: "manual",
+  aiGenerated: "ai_generated",
+} as const;
+
+export type WorkoutSource =
+  (typeof WORKOUT_SOURCE_API)[keyof typeof WORKOUT_SOURCE_API];
+
 export interface Workout {
   id: string;
   name?: string;
   startDate: string;
   endDate?: string;
+  /** How the workout was created (manual log vs AI-generated plan). */
+  source: WorkoutSource;
   entries: WorkoutExercise[];
 }
 

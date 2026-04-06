@@ -3,12 +3,15 @@ import { useStore } from "../store";
 import { cn, formatDateHeading } from "../utils";
 import type { Exercise, PerformedSet, WorkoutExercise, Workout } from "../types";
 import { ExercisePicker } from "./ExercisePicker";
+import { GenerateWorkoutModal } from "./GenerateWorkoutModal";
 
 export function WorkoutView() {
   const selectedDate = useStore((s) => s.selectedDate);
   const workouts = useStore((s) => s.workouts);
   const exercises = useStore((s) => s.exercises);
   const createWorkout = useStore((s) => s.createWorkout);
+
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
 
   const dateWorkouts = workouts.filter((w) => w.startDate === selectedDate);
 
@@ -19,17 +22,30 @@ export function WorkoutView() {
           {formatDateHeading(selectedDate)}
         </h3>
         {dateWorkouts.length > 0 && (
-          <button
-            onClick={() => void createWorkout(selectedDate)}
-            className="text-xs text-accent hover:text-accent-bright transition-colors font-medium"
-          >
-            + Workout
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowGenerateModal(true)}
+              className="text-xs text-fg-muted hover:text-accent transition-colors font-medium flex items-center gap-1"
+              title="Generate with AI"
+            >
+              <SparkleIcon />
+              AI
+            </button>
+            <button
+              onClick={() => void createWorkout(selectedDate)}
+              className="text-xs text-accent hover:text-accent-bright transition-colors font-medium"
+            >
+              + Workout
+            </button>
+          </div>
         )}
       </div>
 
       {dateWorkouts.length === 0 ? (
-        <EmptyState onStart={() => void createWorkout(selectedDate)} />
+        <EmptyState
+          onStart={() => void createWorkout(selectedDate)}
+          onGenerate={() => setShowGenerateModal(true)}
+        />
       ) : (
         <div className="space-y-4">
           {dateWorkouts.map((workout) => (
@@ -41,11 +57,37 @@ export function WorkoutView() {
           ))}
         </div>
       )}
+
+      <GenerateWorkoutModal
+        open={showGenerateModal}
+        onClose={() => setShowGenerateModal(false)}
+        date={selectedDate}
+      />
     </section>
   );
 }
 
-function EmptyState({ onStart }: { onStart: () => void }) {
+function SparkleIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M12 2l2.4 7.2H22l-6.2 4.5 2.4 7.2L12 16.4l-6.2 4.5 2.4-7.2L2 9.2h7.6z" />
+    </svg>
+  );
+}
+
+function EmptyState({
+  onStart,
+  onGenerate,
+}: {
+  onStart: () => void;
+  onGenerate: () => void;
+}) {
   return (
     <div className="flex flex-col items-center justify-center py-16 animate-fade-in">
       <div className="w-16 h-16 rounded-2xl bg-surface-1 border border-border flex items-center justify-center text-2xl mb-4">
@@ -58,6 +100,13 @@ function EmptyState({ onStart }: { onStart: () => void }) {
         className="bg-accent hover:bg-accent-bright text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors shadow-lg shadow-accent/20"
       >
         Start Workout
+      </button>
+      <button
+        onClick={onGenerate}
+        className="mt-3 flex items-center gap-1.5 text-sm font-medium text-fg-muted hover:text-accent border border-border hover:border-accent/50 px-5 py-2 rounded-xl transition-colors"
+      >
+        <SparkleIcon />
+        Generate with AI
       </button>
     </div>
   );

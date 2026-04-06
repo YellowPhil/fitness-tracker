@@ -49,6 +49,11 @@ interface GymStore {
   deleteExercise: (id: string) => Promise<void>;
 
   createWorkout: (date: string, name?: string) => Promise<void>;
+  generateWorkout: (
+    muscleGroups: MuscleGroup[],
+    maxExerciseCount: number,
+    date: string,
+  ) => Promise<void>;
   deleteWorkout: (id: string) => Promise<void>;
   updateWorkoutName: (id: string, name: string) => Promise<void>;
 
@@ -184,6 +189,17 @@ export const useStore = create<GymStore>()(
       createWorkout: async (date, name) => {
         try {
           await api.createWorkoutApi(date, name);
+          await afterWorkoutMutation(get);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+          throw e;
+        }
+      },
+
+      generateWorkout: async (muscleGroups, maxExerciseCount, date) => {
+        try {
+          await api.generateWorkoutApi(muscleGroups, maxExerciseCount, date);
           await afterWorkoutMutation(get);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);

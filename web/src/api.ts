@@ -9,7 +9,9 @@ import type {
   WeightUnits,
   Workout,
   WorkoutExercise,
+  WorkoutSource,
 } from "./types";
+import { WORKOUT_SOURCE_API } from "./types";
 import { getInitData } from "./telegram";
 import { toDateString } from "./utils";
 
@@ -99,6 +101,7 @@ interface ApiWorkout {
   name: string | null;
   start_date: number;
   end_date: number | null;
+  source?: string;
   entries: ApiWorkoutEntry[];
 }
 
@@ -168,6 +171,11 @@ function mapEntryFromApi(e: ApiWorkoutEntry): WorkoutExercise {
   };
 }
 
+function mapWorkoutSourceFromApi(s: string | undefined): WorkoutSource {
+  if (s === WORKOUT_SOURCE_API.aiGenerated) return WORKOUT_SOURCE_API.aiGenerated;
+  return WORKOUT_SOURCE_API.manual;
+}
+
 export function mapWorkoutFromApi(w: ApiWorkout): Workout {
   const start = new Date(w.start_date * 1000);
   const end =
@@ -177,6 +185,7 @@ export function mapWorkoutFromApi(w: ApiWorkout): Workout {
     name: w.name ?? undefined,
     startDate: toDateString(start),
     endDate: end ? toDateString(end) : undefined,
+    source: mapWorkoutSourceFromApi(w.source),
     entries: w.entries.map(mapEntryFromApi),
   };
 }
@@ -245,6 +254,26 @@ export async function createWorkoutApi(
   };
   if (name !== undefined && name.trim() !== "") body.name = name.trim();
   const w = await apiFetch<ApiWorkout>("/api/workouts", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return mapWorkoutFromApi(w);
+}
+
+/** AI-generated workout plan; requires `OPENAI_API_KEY` on the server. */
+export async function generateWorkoutApi(
+  muscleGroups: MuscleGroup[],
+  maxExerciseCount: number,
+  date?: string,
+): Promise<Workout> {
+  const body: Record<string, unknown> = {
+    muscle_groups: muscleGroups,
+    max_exercise_count: maxExerciseCount,
+  };
+  if (date !== undefined) {
+    body.date = `${date}T00:00:00Z`;
+  }
+  const w = await apiFetch<ApiWorkout>("/api/workouts/generate", {
     method: "POST",
     body: JSON.stringify(body),
   });

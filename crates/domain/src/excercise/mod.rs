@@ -9,4 +9,5 @@ pub use excercise::{Exercise, ExerciseId, ExerciseKind, ExerciseMetadata, Exerci
 pub use muscle_group::MuscleGroup;
 pub use query::{QueryType, WorkoutQuery};
 pub use repetitions::*;
+pub use workout::workout_source;
 pub use workout::*;
