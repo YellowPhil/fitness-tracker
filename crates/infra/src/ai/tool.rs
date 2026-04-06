@@ -8,8 +8,9 @@ use async_openai::types::chat::{
     ChatCompletionMessageToolCall, ChatCompletionMessageToolCalls,
     ChatCompletionRequestAssistantMessageArgs, ChatCompletionRequestMessage,
     ChatCompletionRequestSystemMessage, ChatCompletionRequestToolMessage,
-    ChatCompletionRequestUserMessage, ChatCompletionTool, ChatCompletionTools,
-    CreateChatCompletionRequestArgs, FunctionObjectArgs, ResponseFormat, ResponseFormatJsonSchema,
+    ChatCompletionRequestUserMessage, ChatCompletionTool, ChatCompletionToolChoiceOption,
+    ChatCompletionTools, CreateChatCompletionRequestArgs, FunctionObjectArgs, ResponseFormat,
+    ResponseFormatJsonSchema, ToolChoiceOptions,
 };
 use domain::{
     excercise::{
@@ -23,8 +24,8 @@ use tracing::{debug, info, instrument};
 
 use crate::Databases;
 
-const MODEL: &str = "gpt-5";
-const MAX_TOKENS: u32 = 2048;
+const MODEL: &str = "gpt-5-mini";
+const MAX_TOKENS: u32 = 8192;
 const WORKOUT_QUERY_TOOL: &str = "workout_query";
 const EXERCISE_LIST_TOOL: &str = "exercise_list";
 
@@ -82,7 +83,10 @@ impl WorkoutGenerator {
         if loaded_exercises.is_empty() {
             anyhow::bail!("No exercises found for the selected muscle groups");
         }
-        debug!(count = loaded_exercises.len(), "exercises loaded for muscle groups");
+        debug!(
+            count = loaded_exercises.len(),
+            "exercises loaded for muscle groups"
+        );
 
         let exercise_names_sorted = sorted_exercise_names(&loaded_exercises);
         let exercises_by_name = exercises_by_lowercase_name(&loaded_exercises);
@@ -90,6 +94,7 @@ impl WorkoutGenerator {
         let user_content = build_user_message_content(
             date,
             muscle_groups,
+            &loaded_exercises,
             &exercise_names_sorted,
             max_exercise_count,
         );
@@ -111,6 +116,9 @@ impl WorkoutGenerator {
                 workout_query_tool().into(),
                 exercise_query_tool().into(),
             ])
+            .tool_choice(ChatCompletionToolChoiceOption::Mode(
+                ToolChoiceOptions::Required,
+            ))
             .build()?;
 
         debug!("sending initial request to model");
@@ -127,8 +135,20 @@ impl WorkoutGenerator {
 
         let follow_up_messages = match response_message.tool_calls {
             None => {
-                debug!("model skipped tool calls, using initial messages for follow-up");
-                initial_messages
+                let assistant_text = response_message.content.clone().unwrap_or_default();
+                debug!(
+                    content_len = assistant_text.len(),
+                    "model skipped tool calls, appending response to follow-up context"
+                );
+                let assistant_msg: ChatCompletionRequestMessage =
+                    ChatCompletionRequestAssistantMessageArgs::default()
+                        .content(assistant_text)
+                        .build()
+                        .expect("assistant message with content is always valid")
+                        .into();
+                let mut msgs = initial_messages;
+                msgs.push(assistant_msg);
+                msgs
             }
             Some(ref tool_calls) => {
                 debug!(call_count = tool_calls.len(), "model requested tool calls");
@@ -157,18 +177,32 @@ impl WorkoutGenerator {
             })
             .build()?;
 
-        let content = client
+        let follow_up_choice = client
             .chat()
             .create(follow_up_request)
             .await
             .with_context(|| "Failed to generate structured workout from OpenAI")?
             .choices
-            .first()
-            .with_context(|| "No response from OpenAI")?
+            .into_iter()
+            .next()
+            .with_context(|| "No response from OpenAI")?;
+
+        debug!(finish_reason = ?follow_up_choice.finish_reason, "received structured response from model");
+
+        if let Some(refusal) = &follow_up_choice.message.refusal {
+            anyhow::bail!("Model refused to generate workout: {refusal}");
+        }
+
+        let content = follow_up_choice
             .message
             .content
             .clone()
-            .with_context(|| "OpenAI returned no message content")?;
+            .with_context(|| "OpenAI returned no message content and no refusal")?;
+
+        debug!(
+            content_preview = &content[..content.len().min(300)],
+            "raw structured response from model"
+        );
 
         let parsed: super::dto::AiWorkoutResponse = serde_json::from_str(content.trim())
             .with_context(|| format!("Failed to parse workout JSON from model: {content}"))?;
@@ -275,6 +309,7 @@ fn exercises_by_lowercase_name(exercises: &[Exercise]) -> HashMap<String, Exerci
 fn build_user_message_content(
     date: time::Date,
     muscle_groups: &[MuscleGroup],
+    exercises: &[Exercise],
     exercise_names: &[String],
     max_exercise_count: usize,
 ) -> String {
@@ -283,14 +318,57 @@ fn build_user_message_content(
         .map(|g| g.to_string())
         .collect::<Vec<_>>()
         .join(", ");
-    let list = exercise_names.join("\n");
+
+    let mut weighted_names: Vec<&str> = exercises
+        .iter()
+        .filter(|e| matches!(e.kind, ExerciseKind::Weighted))
+        .map(|e| e.name.as_str())
+        .collect();
+    weighted_names.sort_unstable();
+
+    let mut bodyweight_names: Vec<&str> = exercises
+        .iter()
+        .filter(|e| matches!(e.kind, ExerciseKind::BodyWeight))
+        .map(|e| e.name.as_str())
+        .collect();
+    bodyweight_names.sort_unstable();
+
+    let weighted_section = if weighted_names.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "Weighted exercises (MUST have a non-null weight_kg in every set):\n{}\n\n",
+            weighted_names.join("\n")
+        )
+    };
+
+    let bodyweight_section = if bodyweight_names.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "Bodyweight exercises (set weight_kg to null in every set):\n{}\n\n",
+            bodyweight_names.join("\n")
+        )
+    };
+
+    let all_names = exercise_names.join("\n");
+
     format!(
         "Target workout date: {date}\n\
          Muscle groups: {groups}\n\
          Maximum number of exercises (hard cap): {max_exercise_count}\n\n\
-         Allowed exercise names (use only these in your final JSON output):\n\
-         {list}\n\n\
-         Generate a workout plan for the given date. The `exercises` array must contain at most {max_exercise_count} entries. Use the tools if you need past workouts or more exercise detail."
+         {weighted_section}\
+         {bodyweight_section}\
+         Allowed exercise names (use ONLY these exact strings in your final JSON output):\n\
+         {all_names}\n\n\
+         Rules for weight_kg:\n\
+         - Weighted exercises: weight_kg MUST be a positive number (kg). \
+           If no historical data is available, prescribe a conservative but realistic working weight \
+           (e.g. Deadlift 60–100 kg, Barbell Row 40–70 kg, Bench Press 40–80 kg, Overhead Press 30–60 kg).\n\
+         - Bodyweight exercises: weight_kg MUST be null.\n\n\
+         Generate a workout plan for the given date. \
+         The `exercises` array must contain at most {max_exercise_count} entries. \
+         Use the tools to check past workouts before prescribing loads."
     )
 }
 
@@ -414,26 +492,28 @@ fn build_follow_up_messages(
     messages
 }
 
-#[instrument(skip(databases, arguments), fields(user_id = user_id.as_i64()), err)]
+#[instrument(skip(databases), fields(user_id = user_id.as_i64()), err)]
 async fn execute_query_workouts(
     databases: Arc<Databases>,
     user_id: UserId,
-    arguments: &str,
+    arguments_str: &str,
 ) -> anyhow::Result<String> {
-    let arguments = serde_json::from_str::<super::dto::QueryWorkoutsRequest>(arguments)
+    let arguments = serde_json::from_str::<super::dto::QueryWorkoutsRequest>(arguments_str)
         .with_context(|| "Invalid arguments for workout query tool")?;
 
-    let date = match arguments.query {
-        Some(super::dto::WorkoutQuery::Date(date)) => domain::excercise::QueryType::OnDate(date),
-        Some(super::dto::WorkoutQuery::Last(count)) => domain::excercise::QueryType::LastN(count),
-        None => domain::excercise::QueryType::Latest,
+    let date = match arguments.date {
+        Some(date) => domain::excercise::QueryType::OnDate(date),
+        None => match arguments.last_n {
+            Some(count) => domain::excercise::QueryType::LastN(count),
+            None => domain::excercise::QueryType::Latest,
+        },
     };
 
     let result = databases
         .gym_app(user_id)
         .query_workout_resource(domain::excercise::WorkoutQuery {
             date,
-            muscle_group: arguments.muscle_group,
+            muscle_group: Some(arguments.muscle_group),
         })
         .await
         .with_context(|| "Failed to query workouts")?;
@@ -441,17 +521,17 @@ async fn execute_query_workouts(
     Ok(super::format::format_workouts(
         &result.workouts,
         &result.excercises,
-        arguments.muscle_group,
+        Some(arguments.muscle_group),
     ))
 }
 
-#[instrument(skip(databases, arguments), fields(user_id = user_id.as_i64()), err)]
+#[instrument(skip(databases)  fields(user_id = user_id.as_i64()), err)]
 async fn execute_list_exercises(
     databases: Arc<Databases>,
     user_id: UserId,
-    arguments: &str,
+    arguments_str: &str,
 ) -> anyhow::Result<String> {
-    let arguments = serde_json::from_str::<super::dto::ListExercisesRequest>(arguments)
+    let arguments = serde_json::from_str::<super::dto::ListExercisesRequest>(arguments_str)
         .with_context(|| "Invalid arguments for exercise list tool")?;
 
     let result = databases

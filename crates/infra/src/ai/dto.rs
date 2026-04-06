@@ -7,9 +7,11 @@ use serde::Deserialize;
 #[serde(deny_unknown_fields)]
 pub(super) struct QueryWorkoutsRequest {
     #[serde(default)]
-    pub query: Option<WorkoutQuery>,
-    #[serde(default, deserialize_with = "deserialize_optional_muscle_group")]
-    pub muscle_group: Option<MuscleGroup>,
+    pub date: Option<time::Date>,
+    #[serde(default)]
+    pub last_n: Option<usize>,
+    #[serde(deserialize_with = "deserialize_muscle_group")]
+    pub muscle_group: MuscleGroup,
 }
 
 #[derive(serde::Deserialize)]

@@ -213,7 +213,10 @@ async fn list_workouts(
     let date = query.date.as_deref().map(parse_date).transpose()?;
     let app = state.databases.gym_app(user.0);
     let workouts = match date {
-        Some(d) => app.get_workout_by_date(d).await.map_err(ApiError::internal)?,
+        Some(d) => app
+            .get_workout_by_date(d)
+            .await
+            .map_err(ApiError::internal)?,
         None => app.get_all_workouts().await.map_err(ApiError::internal)?,
     };
     Ok(Json(workouts.into_iter().map(Into::into).collect()))
@@ -234,7 +237,6 @@ async fn create_workout(
     Ok((StatusCode::CREATED, Json(workout.into())))
 }
 
-#[instrument(skip(state, user, body), fields(user_id = user.0.as_i64()))]
 async fn generate_workout_ai(
     user: AuthUser,
     State(state): State<AppState>,
