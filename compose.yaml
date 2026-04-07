@@ -4,7 +4,7 @@
 # Required env vars:
 #   BIND_ADDR, FRONTEND_URL, BACKEND_URL, TELOXIDE_TOKEN, POSTGRES_URL
 # Optional:
-#   RUST_LOG (default: info)
+#   RUST_LOG (default: info), ALLOWED_USER_IDS (whitelist of Telegram user IDs separated by commas)
 
 services:
   backend:
@@ -18,6 +18,7 @@ services:
       - TELOXIDE_TOKEN=${TELOXIDE_TOKEN:?Set TELOXIDE_TOKEN}
       - POSTGRES_URL=${POSTGRES_URL:?Set POSTGRES_URL}
       - RUST_LOG=${RUST_LOG:-info}
+      - ALLOWED_USER_IDS=${ALLOWED_USER_IDS}
     restart: unless-stopped
 
   bot:
