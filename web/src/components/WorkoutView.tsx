@@ -551,21 +551,40 @@ function EditableCell({
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
+  const [localValue, setLocalValue] = useState(value);
+  // Tracks the value we just committed so we don't revert to the old store value
+  // while the async updateSet call is still in-flight.
+  const pendingValue = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!editing) setDraft(value);
+    if (editing) return;
+    if (pendingValue.current !== null) {
+      // Store confirmed our optimistic value — clear pending and stay in sync
+      if (value === pendingValue.current) {
+        pendingValue.current = null;
+        setLocalValue(value);
+      }
+      // Still in-flight: keep showing the optimistic value, don't revert
+      return;
+    }
+    setLocalValue(value);
   }, [value, editing]);
 
   function handleFocus() {
-    setDraft("");
     setEditing(true);
+    setLocalValue("");
   }
 
   function handleBlur() {
+    const trimmed = localValue.trim();
+    const committed = trimmed === "" ? value : trimmed;
     setEditing(false);
-    const committed = draft.trim() === "" ? value : draft;
-    if (committed !== value) onCommit(committed);
+    // Show the committed value immediately (optimistic) rather than reverting
+    setLocalValue(committed);
+    if (committed !== value) {
+      pendingValue.current = committed;
+      onCommit(committed);
+    }
   }
 
   return (
@@ -575,15 +594,16 @@ function EditableCell({
         type="number"
         inputMode={inputMode}
         step={inputMode === "decimal" ? "0.5" : "1"}
-        value={editing ? draft : value}
+        value={localValue}
         placeholder={editing ? value : undefined}
         onFocus={handleFocus}
         onBlur={handleBlur}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => setLocalValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") ref.current?.blur();
           if (e.key === "Escape") {
-            setDraft(value);
+            pendingValue.current = null;
+            setLocalValue(value);
             setEditing(false);
             ref.current?.blur();
           }

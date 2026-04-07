@@ -276,11 +276,27 @@ export const useStore = create<GymStore>()(
       },
 
       updateSet: async (workoutId, exerciseId, setIndex, newSet) => {
+        const previous = get().workouts;
+        set((s) => ({
+          workouts: s.workouts.map((w) => {
+            if (w.id !== workoutId) return w;
+            return {
+              ...w,
+              entries: w.entries.map((e) => {
+                if (e.exerciseId !== exerciseId) return e;
+                const sets = [...e.sets];
+                sets[setIndex] = newSet;
+                return { ...e, sets };
+              }),
+            };
+          }),
+        }));
         try {
           await api.removeSetApi(workoutId, exerciseId, setIndex);
           await api.addSetApi(workoutId, exerciseId, newSet);
           await get().refreshWorkouts();
         } catch (e) {
+          set({ workouts: previous });
           const msg = e instanceof Error ? e.message : String(e);
           set({ syncError: msg });
           throw e;
