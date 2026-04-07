@@ -2,17 +2,33 @@ use axum::extract::State;
 use axum::{Json, Router};
 use domain::{
     health::HealthParams,
-    types::{Height, HeightUnits, Weight, WeightUnits},
+    types::{Height, Weight},
 };
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
+use super::types::{HeightUnitsReq, WeightUnitsReq};
 use super::{ApiError, AppState, AuthUser};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", axum::routing::get(get_profile).put(update_profile))
         .route("/weight", axum::routing::patch(update_weight))
+}
+
+#[derive(Deserialize)]
+struct UpdateProfileRequest {
+    weight_value: f64,
+    weight_units: WeightUnitsReq,
+    height_value: f64,
+    height_units: HeightUnitsReq,
+    age: u32,
+}
+
+#[derive(Deserialize)]
+struct UpdateWeightRequest {
+    value: f64,
+    units: WeightUnitsReq,
 }
 
 #[derive(Serialize)]
@@ -36,36 +52,6 @@ impl From<HealthParams> for ProfileResponse {
     }
 }
 
-#[derive(Deserialize)]
-struct UpdateProfileRequest {
-    weight_value: f64,
-    weight_units: String,
-    height_value: f64,
-    height_units: String,
-    age: u32,
-}
-
-#[derive(Deserialize)]
-struct UpdateWeightRequest {
-    value: f64,
-    units: String,
-}
-
-fn parse_weight_units(s: &str) -> Result<WeightUnits, ApiError> {
-    match s {
-        "kg" => Ok(WeightUnits::Kilograms),
-        "lbs" => Ok(WeightUnits::Pounds),
-        _ => Err(ApiError::validation(format!("unknown weight units: {s}"))),
-    }
-}
-
-fn parse_height_units(s: &str) -> Result<HeightUnits, ApiError> {
-    match s {
-        "cm" => Ok(HeightUnits::Centimeters),
-        "in" => Ok(HeightUnits::Inches),
-        _ => Err(ApiError::validation(format!("unknown height units: {s}"))),
-    }
-}
 
 #[instrument(skip(state, user), fields(user_id = user.0.as_i64()))]
 async fn get_profile(
@@ -87,12 +73,9 @@ async fn update_profile(
     State(state): State<AppState>,
     Json(body): Json<UpdateProfileRequest>,
 ) -> Result<Json<ProfileResponse>, ApiError> {
-    let weight_units = parse_weight_units(&body.weight_units)?;
-    let height_units = parse_height_units(&body.height_units)?;
-
     let params = HealthParams::new(
-        Height::new(body.height_value, height_units),
-        Weight::new(body.weight_value, weight_units),
+        Height::new(body.height_value, body.height_units.into()),
+        Weight::new(body.weight_value, body.weight_units.into()),
         body.age,
     );
 
@@ -111,8 +94,7 @@ async fn update_weight(
     State(state): State<AppState>,
     Json(body): Json<UpdateWeightRequest>,
 ) -> Result<Json<ProfileResponse>, ApiError> {
-    let units = parse_weight_units(&body.units)?;
-    let weight = Weight::new(body.value, units);
+    let weight = Weight::new(body.value, body.units.into());
 
     let updated = state
         .databases

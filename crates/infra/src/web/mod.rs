@@ -1,6 +1,7 @@
 pub mod excercise;
 pub mod profile;
 pub mod telegram_auth;
+pub mod types;
 pub mod workout;
 
 use std::path::Path;
@@ -20,14 +21,35 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, instrument, warn};
 
-use crate::{
-    PostgresExcerciseDb, PostgresHealthDb, PostgresWorkoutDb,
-};
+use crate::{PostgresExcerciseDb, PostgresHealthDb, PostgresWorkoutDb};
 
 pub struct Databases {
     pub exercise_db: PostgresExcerciseDb,
     pub workout_db: PostgresWorkoutDb,
     pub health_db: PostgresHealthDb,
+}
+pub enum ApiError {
+    Unauthorized,
+    /// The user is authenticated but not in the allowlist.
+    Forbidden,
+    NotFound,
+    /// Service unavailable (e.g. AI features not configured).
+    ServiceUnavailable(&'static str),
+    Internal(String),
+}
+
+impl ApiError {
+    /// Repository or application failure surfaced as HTTP 500.
+    pub fn internal(err: impl std::fmt::Display) -> Self {
+        error!(error = %err, "internal error");
+        Self::Internal(err.to_string())
+    }
+
+    /// Client-side parse / validation issues (still HTTP 500 for this API).
+    pub fn validation(err: impl std::fmt::Display) -> Self {
+        warn!(error = %err, "request validation failed");
+        Self::Internal(err.to_string())
+    }
 }
 
 impl Databases {
@@ -207,30 +229,6 @@ impl FromRequestParts<AppState> for AuthUser {
         }
 
         Ok(AuthUser(UserId::new(user_id)))
-    }
-}
-
-pub enum ApiError {
-    Unauthorized,
-    /// The user is authenticated but not in the allowlist.
-    Forbidden,
-    NotFound,
-    /// Service unavailable (e.g. AI features not configured).
-    ServiceUnavailable(&'static str),
-    Internal(String),
-}
-
-impl ApiError {
-    /// Repository or application failure surfaced as HTTP 500.
-    pub fn internal(err: impl std::fmt::Display) -> Self {
-        error!(error = %err, "internal error");
-        Self::Internal(err.to_string())
-    }
-
-    /// Client-side parse / validation issues (still HTTP 500 for this API).
-    pub fn validation(err: impl std::fmt::Display) -> Self {
-        warn!(error = %err, "request validation failed");
-        Self::Internal(err.to_string())
     }
 }
 

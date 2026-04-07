@@ -5,6 +5,7 @@ use domain::excercise::{Exercise, ExerciseId, ExerciseKind, ExerciseSource, Musc
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 
+use super::types::{ExerciseKindReq, MuscleGroupReq, Name};
 use super::{ApiError, AppState, AuthUser};
 
 pub fn routes() -> Router<AppState> {
@@ -14,6 +15,14 @@ pub fn routes() -> Router<AppState> {
             axum::routing::get(list_exercises).post(create_exercise),
         )
         .route("/{exercise_id}", axum::routing::delete(delete_exercise))
+}
+
+#[derive(Deserialize)]
+struct CreateExcerciseRequest {
+    name: Name,
+    kind: ExerciseKindReq,
+    muscle_group: MuscleGroupReq,
+    secondary_muscle_groups: Option<Vec<MuscleGroupReq>>,
 }
 
 #[derive(Serialize)]
@@ -49,34 +58,6 @@ impl From<Exercise> for ExcerciseResponse {
     }
 }
 
-#[derive(Deserialize)]
-struct CreateExcerciseRequest {
-    name: String,
-    kind: String,
-    muscle_group: String,
-    secondary_muscle_groups: Option<Vec<String>>,
-}
-
-fn parse_muscle_group(s: &str) -> Result<MuscleGroup, ApiError> {
-    match s.to_lowercase().as_str() {
-        "chest" => Ok(MuscleGroup::Chest),
-        "back" => Ok(MuscleGroup::Back),
-        "shoulders" => Ok(MuscleGroup::Shoulders),
-        "arms" => Ok(MuscleGroup::Arms),
-        "legs" => Ok(MuscleGroup::Legs),
-        "core" => Ok(MuscleGroup::Core),
-        _ => Err(ApiError::validation(format!("unknown muscle group: {s}"))),
-    }
-}
-
-fn parse_excercise_kind(s: &str) -> Result<ExerciseKind, ApiError> {
-    match s.to_lowercase().as_str() {
-        "weighted" => Ok(ExerciseKind::Weighted),
-        "bodyweight" => Ok(ExerciseKind::BodyWeight),
-        _ => Err(ApiError::validation(format!("unknown exercise kind: {s}"))),
-    }
-}
-
 fn parse_uuid(s: &str) -> Result<uuid::Uuid, ApiError> {
     uuid::Uuid::parse_str(s).map_err(|e| ApiError::validation(format!("invalid uuid: {e}")))
 }
@@ -90,10 +71,7 @@ async fn list_exercises(
     app.seed_built_in_excercises()
         .await
         .map_err(ApiError::internal)?;
-    let exercises = app
-        .get_all_excercises()
-        .await
-        .map_err(ApiError::internal)?;
+    let exercises = app.get_all_excercises().await.map_err(ApiError::internal)?;
 
     Ok(Json(exercises.into_iter().map(Into::into).collect()))
 }
@@ -104,22 +82,16 @@ async fn create_exercise(
     State(state): State<AppState>,
     Json(body): Json<CreateExcerciseRequest>,
 ) -> Result<StatusCode, ApiError> {
-    let kind = parse_excercise_kind(&body.kind)?;
-    let muscle_group = parse_muscle_group(&body.muscle_group)?;
+    let kind = ExerciseKind::from(body.kind);
+    let muscle_group = MuscleGroup::from(body.muscle_group);
     let secondary = body
         .secondary_muscle_groups
-        .map(|groups| {
-            groups
-                .iter()
-                .map(|g| parse_muscle_group(g))
-                .collect::<Result<Vec<_>, _>>()
-        })
-        .transpose()?;
+        .map(|groups| groups.into_iter().map(MuscleGroup::from).collect());
 
     state
         .databases
         .gym_app(user.0)
-        .add_new_excercise(body.name, muscle_group, secondary, kind)
+        .add_new_excercise(String::from(body.name), muscle_group, secondary, kind)
         .await
         .map_err(ApiError::internal)?;
 

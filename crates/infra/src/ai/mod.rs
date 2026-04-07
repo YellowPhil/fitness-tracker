@@ -1,5 +1,5 @@
 mod dto;
 mod format;
-mod tool;
+mod tools;
 
-pub use tool::{GeneratedWorkout, WorkoutGenerator};
+pub use tools::{GeneratedWorkout, WorkoutGenerator};

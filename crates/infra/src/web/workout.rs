@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use std::sync::Arc;
 
 use axum::extract::{Path, Query, State};
@@ -7,13 +6,14 @@ use axum::{Json, Router};
 use domain::excercise::{
     ExerciseId, LoadType, MuscleGroup, PerformedSet, Workout, WorkoutExercise, WorkoutId,
 };
-use domain::types::{Weight, WeightUnits};
+use domain::types::Weight;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tracing::instrument;
 
 use crate::ai::WorkoutGenerator;
 
+use super::types::{MuscleGroupReq, Name, WeightUnitsReq};
 use super::{ApiError, AppState, AuthUser};
 
 pub fn routes() -> Router<AppState> {
@@ -118,7 +118,7 @@ impl From<PerformedSet> for SetResponse {
 
 #[derive(Deserialize)]
 struct CreateWorkoutRequest {
-    name: Option<String>,
+    name: Option<Name>,
     #[serde(default, with = "time::serde::rfc3339::option")]
     date: Option<OffsetDateTime>,
 }
@@ -126,7 +126,7 @@ struct CreateWorkoutRequest {
 #[derive(Deserialize)]
 struct GenerateWorkoutRequest {
     /// Muscle group names as returned by the API (e.g. `"Chest"`, `"Legs"`).
-    muscle_groups: Vec<String>,
+    muscle_groups: Vec<MuscleGroupReq>,
     max_exercise_count: usize,
     #[serde(default, with = "time::serde::rfc3339::option")]
     date: Option<OffsetDateTime>,
@@ -139,7 +139,7 @@ struct ListWorkoutsQuery {
 
 #[derive(Deserialize)]
 struct UpdateWorkoutRequest {
-    name: Option<String>,
+    name: Option<Name>,
 }
 
 #[derive(Deserialize)]
@@ -168,9 +168,20 @@ struct AddSetRequest {
 #[serde(tag = "type")]
 enum LoadRequest {
     #[serde(rename = "weighted")]
-    Weighted { value: f64, units: String },
+    Weighted { value: f64, units: WeightUnitsReq },
     #[serde(rename = "bodyweight")]
     BodyWeight,
+}
+
+impl From<LoadRequest> for LoadType {
+    fn from(req: LoadRequest) -> Self {
+        match req {
+            LoadRequest::Weighted { value, units } => {
+                LoadType::Weighted(Weight::new(value, units.into()))
+            }
+            LoadRequest::BodyWeight => LoadType::BodyWeight,
+        }
+    }
 }
 
 fn parse_uuid(s: &str) -> Result<uuid::Uuid, ApiError> {
@@ -181,24 +192,6 @@ fn parse_date(s: &str) -> Result<time::Date, ApiError> {
     let format = time::format_description::parse_borrowed::<2>("[year]-[month]-[day]").unwrap();
     time::Date::parse(s, &format)
         .map_err(|_| ApiError::validation(format!("invalid date format: {s}")))
-}
-
-fn parse_weight_units(s: &str) -> Result<WeightUnits, ApiError> {
-    match s.to_lowercase().as_str() {
-        "kg" | "kilograms" => Ok(WeightUnits::Kilograms),
-        "lbs" | "pounds" => Ok(WeightUnits::Pounds),
-        _ => Err(ApiError::validation(format!("unknown weight units: {s}"))),
-    }
-}
-
-fn load_request_to_domain(req: LoadRequest) -> Result<LoadType, ApiError> {
-    match req {
-        LoadRequest::Weighted { value, units } => Ok(LoadType::Weighted(Weight::new(
-            value,
-            parse_weight_units(&units)?,
-        ))),
-        LoadRequest::BodyWeight => Ok(LoadType::BodyWeight),
-    }
 }
 
 #[instrument(
@@ -231,7 +224,7 @@ async fn create_workout(
     let workout = state
         .databases
         .gym_app(user.0)
-        .create_new_workout(body.name, body.date)
+        .create_new_workout(body.name.map(String::from), body.date)
         .await
         .map_err(ApiError::internal)?;
     Ok((StatusCode::CREATED, Json(workout.into())))
@@ -259,17 +252,8 @@ async fn generate_workout_ai(
         ));
     }
 
-    let muscle_groups: Vec<MuscleGroup> = body
-        .muscle_groups
-        .iter()
-        .map(|s| {
-            MuscleGroup::from_str(s).map_err(|_| {
-                ApiError::validation(format!(
-                    "invalid muscle group: {s} (expected e.g. Chest, Legs)"
-                ))
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let muscle_groups: Vec<MuscleGroup> =
+        body.muscle_groups.into_iter().map(MuscleGroup::from).collect();
 
     let dbs = Arc::clone(&state.databases);
     let app = state.databases.gym_app(user.0);
@@ -349,7 +333,8 @@ async fn update_workout(
 ) -> Result<Json<WorkoutResponse>, ApiError> {
     let id = WorkoutId::from_uuid(parse_uuid(&workout_id)?);
     let app = state.databases.gym_app(user.0);
-    app.update_workout_name(&id, body.name.as_deref())
+    let name = body.name.map(String::from);
+    app.update_workout_name(&id, name.as_deref())
         .await
         .map_err(ApiError::internal)?;
     let workout = app
@@ -470,7 +455,7 @@ async fn add_set(
 ) -> Result<StatusCode, ApiError> {
     let wid = WorkoutId::from_uuid(parse_uuid(&workout_id)?);
     let eid = ExerciseId::from_uuid(parse_uuid(&exercise_id)?);
-    let load = load_request_to_domain(body.load)?;
+    let load = LoadType::from(body.load);
 
     state
         .databases

@@ -617,3 +617,20 @@ fn workout_query_tool() -> ChatCompletionTools {
             .into(),
     })
 }
+
+fn health_query_tool() -> ChatCompletionTools {
+    ChatCompletionTools::Function(ChatCompletionTool {
+        function: FunctionObjectArgs::default()
+            .name("health_query")
+            .description("Query users health information that includes weight, height, and age.")
+            .parameters(serde_json::json!({
+                "type": "object",
+                "properties": { },
+                "required": [],
+                "additionalProperties": false,
+            }))
+            .build()
+            .unwrap()
+            .into(),
+    })
+}
