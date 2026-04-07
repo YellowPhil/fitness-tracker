@@ -41,7 +41,7 @@ pub fn routes() -> Router<AppState> {
         )
         .route(
             "/{workout_id}/exercises/{exercise_id}/sets/{set_index}",
-            axum::routing::delete(remove_set),
+            axum::routing::put(update_set).delete(remove_set),
         )
 }
 
@@ -364,6 +364,41 @@ async fn remove_exercise_from_workout(
         .databases
         .gym_app(user.0)
         .remove_excercise_from_workout(&wid, &eid)
+        .await
+        .map_err(ApiError::internal)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+#[instrument(
+    skip(state, user, body),
+    fields(
+        user_id = user.0.as_i64(),
+        workout_id = %workout_id,
+        exercise_id = %exercise_id,
+        set_index = set_index
+    )
+)]
+async fn update_set(
+    user: AuthUser,
+    State(state): State<AppState>,
+    Path((workout_id, exercise_id, set_index)): Path<(String, String, usize)>,
+    Json(body): Json<AddSetRequest>,
+) -> Result<StatusCode, ApiError> {
+    let wid = WorkoutId::from_uuid(parse_uuid(&workout_id)?);
+    let eid = ExerciseId::from_uuid(parse_uuid(&exercise_id)?);
+    let load = LoadType::from(body.load);
+    state
+        .databases
+        .gym_app(user.0)
+        .update_set_in_workout(
+            &wid,
+            &eid,
+            set_index,
+            PerformedSet {
+                kind: load,
+                reps: body.reps,
+            },
+        )
         .await
         .map_err(ApiError::internal)?;
     Ok(StatusCode::NO_CONTENT)

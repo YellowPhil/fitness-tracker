@@ -292,9 +292,7 @@ export const useStore = create<GymStore>()(
           }),
         }));
         try {
-          await api.removeSetApi(workoutId, exerciseId, setIndex);
-          await api.addSetApi(workoutId, exerciseId, newSet);
-          await get().refreshWorkouts();
+          await api.updateSetApi(workoutId, exerciseId, setIndex, newSet);
         } catch (e) {
           set({ workouts: previous });
           const msg = e instanceof Error ? e.message : String(e);

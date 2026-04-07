@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, type FormEvent, type ReactNode } from "react";
+import { useState, useRef, useEffect, useCallback, type FormEvent } from "react";
 import { useStore } from "../store";
 import { cn, formatDateHeading } from "../utils";
 import type { Exercise, PerformedSet, WorkoutExercise, Workout } from "../types";
@@ -156,20 +156,12 @@ function WorkoutCard({
 
       <div className="divide-y divide-border/40">
         {workout.entries.map((entry, idx) => (
-          <SwipeToRemove
+          <ExerciseEntry
             key={`${entry.exerciseId}-${idx}`}
-            onRemove={() =>
-              void useStore
-                .getState()
-                .removeExerciseFromWorkout(workout.id, entry.exerciseId)
-            }
-          >
-            <ExerciseEntry
-              workoutId={workout.id}
-              entry={entry}
-              exercise={exercises.find((e) => e.id === entry.exerciseId)}
-            />
-          </SwipeToRemove>
+            workoutId={workout.id}
+            entry={entry}
+            exercise={exercises.find((e) => e.id === entry.exerciseId)}
+          />
         ))}
       </div>
 
@@ -191,119 +183,20 @@ function WorkoutCard({
 }
 
 // ---------------------------------------------------------------------------
-// Swipe-to-remove wrapper (touch devices only, X button stays on desktop)
+// Small X button for removing items
 // ---------------------------------------------------------------------------
 
-function SwipeToRemove({
-  onRemove,
-  children,
-}: {
-  onRemove: () => void;
-  children: ReactNode;
-}) {
-  const [offsetX, setOffsetX] = useState(0);
-  const [removed, setRemoved] = useState(false);
-  const swipingRef = useRef(false);
-  const startX = useRef(0);
-  const startY = useRef(0);
-  const locked = useRef<"h" | "v" | null>(null);
-  const currentOffset = useRef(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = contentRef.current;
-    if (!el) return;
-
-    function handleStart(e: TouchEvent) {
-      startX.current = e.touches[0].clientX;
-      startY.current = e.touches[0].clientY;
-      locked.current = null;
-      swipingRef.current = true;
-      currentOffset.current = 0;
-    }
-
-    function handleMove(e: TouchEvent) {
-      if (!swipingRef.current || !el) return;
-      const dx = e.touches[0].clientX - startX.current;
-      const dy = e.touches[0].clientY - startY.current;
-
-      if (!locked.current) {
-        if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
-          locked.current = Math.abs(dx) > Math.abs(dy) ? "h" : "v";
-        }
-        return;
-      }
-      if (locked.current === "v") return;
-
-      e.preventDefault();
-      const clamped = Math.min(0, dx);
-      currentOffset.current = clamped;
-      el.style.transform = `translateX(${clamped}px)`;
-      el.style.transition = "none";
-      setOffsetX(clamped);
-    }
-
-    function handleEnd() {
-      if (!swipingRef.current || !el) return;
-      swipingRef.current = false;
-      el.style.transition = "";
-
-      if (locked.current !== "h") {
-        currentOffset.current = 0;
-        el.style.transform = "translateX(0)";
-        setOffsetX(0);
-        return;
-      }
-
-      const width = containerRef.current?.offsetWidth ?? 300;
-      if (Math.abs(currentOffset.current) > width * 0.4) {
-        el.style.transform = "translateX(-100%)";
-        setRemoved(true);
-        setTimeout(onRemove, 180);
-      } else {
-        currentOffset.current = 0;
-        el.style.transform = "translateX(0)";
-        setOffsetX(0);
-      }
-    }
-
-    el.addEventListener("touchstart", handleStart, { passive: true });
-    el.addEventListener("touchmove", handleMove, { passive: false });
-    el.addEventListener("touchend", handleEnd, { passive: true });
-    return () => {
-      el.removeEventListener("touchstart", handleStart);
-      el.removeEventListener("touchmove", handleMove);
-      el.removeEventListener("touchend", handleEnd);
-    };
-  }, [onRemove]);
-
-  const showBg = offsetX < -4 || removed;
-  const pct = containerRef.current
-    ? Math.min(Math.abs(offsetX) / containerRef.current.offsetWidth, 1)
-    : 0;
-
+function RemoveButton({ onClick, label }: { onClick: () => void; label: string }) {
   return (
-    <div ref={containerRef} className="relative overflow-hidden">
-      {showBg && (
-        <div
-          className="absolute inset-0 flex items-center justify-end pr-5"
-          style={{
-            backgroundColor: `oklch(0.55 ${0.12 + pct * 0.1} 27)`,
-          }}
-        >
-          <span className="text-white text-xs font-semibold tracking-wide">
-            Remove
-          </span>
-        </div>
-      )}
-      <div
-        ref={contentRef}
-        className="relative bg-surface-1 transition-transform duration-180 ease-out"
-      >
-        {children}
-      </div>
-    </div>
+    <button
+      onClick={onClick}
+      className="flex items-center justify-center w-5 h-5 rounded text-fg-muted/60 hover:text-danger hover:bg-danger/10 active:bg-danger/20 transition-colors shrink-0"
+      aria-label={label}
+    >
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+        <path d="M18 6L6 18M6 6l12 12" />
+      </svg>
+    </button>
   );
 }
 
@@ -400,24 +293,10 @@ function ExerciseEntry({
             {exercise?.muscleGroup}
           </span>
         </div>
-        <button
-          onClick={() =>
-            void removeExerciseFromWorkout(workoutId, entry.exerciseId)
-          }
-          className="hidden md:flex text-fg-muted hover:text-danger transition-colors ml-2 shrink-0 items-center justify-center"
-          aria-label="Remove exercise"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
+        <RemoveButton
+          onClick={() => void removeExerciseFromWorkout(workoutId, entry.exerciseId)}
+          label="Remove exercise"
+        />
       </div>
 
       {entry.sets.length > 0 && (
@@ -426,31 +305,24 @@ function ExerciseEntry({
             className={cn(
               "grid text-[0.6rem] uppercase tracking-wider text-fg-muted font-semibold mb-1",
               isWeighted
-                ? "grid-cols-[2rem_1fr_1fr] gap-2 justify-items-center"
-                : "grid-cols-[2rem_1fr] justify-items-center",
+                ? "grid-cols-[2rem_1fr_1fr_1.25rem] gap-2 justify-items-center"
+                : "grid-cols-[2rem_1fr_1.25rem] justify-items-center",
             )}
           >
             <span className="justify-self-start">Set</span>
             {isWeighted && <span>Weight</span>}
             <span>Reps</span>
+            <span />
           </div>
           {entry.sets.map((set, si) => (
-            <SwipeToRemove
+            <SetRow
               key={si}
-              onRemove={() =>
-                void useStore
-                  .getState()
-                  .removeSet(workoutId, entry.exerciseId, si)
-              }
-            >
-              <SetRow
-                workoutId={workoutId}
-                exerciseId={entry.exerciseId}
-                set={set}
-                index={si}
-                isWeighted={isWeighted}
-              />
-            </SwipeToRemove>
+              workoutId={workoutId}
+              exerciseId={entry.exerciseId}
+              set={set}
+              index={si}
+              isWeighted={isWeighted}
+            />
           ))}
         </div>
       )}
@@ -483,36 +355,48 @@ function SetRow({
   isWeighted: boolean;
 }) {
   const updateSet = useStore((s) => s.updateSet);
+  const removeSet = useStore((s) => s.removeSet);
 
-  function commit(field: "weight" | "reps", raw: string) {
-    const num = parseFloat(raw);
-    if (isNaN(num) || num <= 0) return;
+  const commit = useCallback(
+    (field: "weight" | "reps", raw: string) => {
+      const num = parseFloat(raw);
+      if (isNaN(num) || num <= 0) return;
 
-    let newSet: PerformedSet;
-    if (field === "weight" && set.kind.type === "Weighted") {
-      newSet = {
-        ...set,
-        kind: {
-          type: "Weighted",
-          weight: { value: num, units: set.kind.weight.units },
-        },
-      };
-    } else if (field === "reps") {
-      newSet = { ...set, reps: Math.round(num) };
-    } else {
-      return;
-    }
+      // Read current set from the store to avoid stale closures when
+      // quickly switching between fields (weight → reps or vice-versa).
+      const state = useStore.getState();
+      const workout = state.workouts.find((w) => w.id === workoutId);
+      const entry = workout?.entries.find((e) => e.exerciseId === exerciseId);
+      const currentSet = entry?.sets[index];
+      if (!currentSet) return;
 
-    void updateSet(workoutId, exerciseId, index, newSet);
-  }
+      let newSet: PerformedSet;
+      if (field === "weight" && currentSet.kind.type === "Weighted") {
+        newSet = {
+          ...currentSet,
+          kind: {
+            type: "Weighted",
+            weight: { value: num, units: currentSet.kind.weight.units },
+          },
+        };
+      } else if (field === "reps") {
+        newSet = { ...currentSet, reps: Math.round(num) };
+      } else {
+        return;
+      }
+
+      void updateSet(workoutId, exerciseId, index, newSet);
+    },
+    [workoutId, exerciseId, index, updateSet],
+  );
 
   return (
     <div
       className={cn(
         "grid items-center py-2 transition-colors",
         isWeighted
-          ? "grid-cols-[2rem_1fr_1fr] gap-2 justify-items-center"
-          : "grid-cols-[2rem_1fr] justify-items-center",
+          ? "grid-cols-[2rem_1fr_1fr_1.25rem] gap-2 justify-items-center"
+          : "grid-cols-[2rem_1fr_1.25rem] justify-items-center",
       )}
     >
       <span className="text-fg-muted text-xs font-medium justify-self-start tabular-nums pl-1">
@@ -534,6 +418,11 @@ function SetRow({
         inputMode="numeric"
         onCommit={(v) => commit("reps", v)}
       />
+
+      <RemoveButton
+        onClick={() => void removeSet(workoutId, exerciseId, index)}
+        label="Remove set"
+      />
     </div>
   );
 }
@@ -552,22 +441,11 @@ function EditableCell({
   const ref = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState(false);
   const [localValue, setLocalValue] = useState(value);
-  // Tracks the value we just committed so we don't revert to the old store value
-  // while the async updateSet call is still in-flight.
-  const pendingValue = useRef<string | null>(null);
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
 
   useEffect(() => {
-    if (editing) return;
-    if (pendingValue.current !== null) {
-      // Store confirmed our optimistic value — clear pending and stay in sync
-      if (value === pendingValue.current) {
-        pendingValue.current = null;
-        setLocalValue(value);
-      }
-      // Still in-flight: keep showing the optimistic value, don't revert
-      return;
-    }
-    setLocalValue(value);
+    if (!editing) setLocalValue(value);
   }, [value, editing]);
 
   function handleFocus() {
@@ -579,11 +457,9 @@ function EditableCell({
     const trimmed = localValue.trim();
     const committed = trimmed === "" ? value : trimmed;
     setEditing(false);
-    // Show the committed value immediately (optimistic) rather than reverting
     setLocalValue(committed);
     if (committed !== value) {
-      pendingValue.current = committed;
-      onCommit(committed);
+      onCommitRef.current(committed);
     }
   }
 
@@ -602,7 +478,6 @@ function EditableCell({
         onKeyDown={(e) => {
           if (e.key === "Enter") ref.current?.blur();
           if (e.key === "Escape") {
-            pendingValue.current = null;
             setLocalValue(value);
             setEditing(false);
             ref.current?.blur();

@@ -235,6 +235,29 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
     }
 
     #[instrument(
+        skip(self, set),
+        fields(
+            workout_id = ?workout_id,
+            excercise_id = ?excercise_id,
+            set_index = set_index
+        ),
+        err
+    )]
+    pub async fn update_set_in_workout(
+        &self,
+        workout_id: &WorkoutId,
+        excercise_id: &ExerciseId,
+        set_index: usize,
+        set: PerformedSet,
+    ) -> Result<(), AppError<E::RepoError, W::RepoError>> {
+        self.workout_repo
+            .update_set(workout_id, excercise_id, set_index, &set)
+            .await
+            .map_err(AppError::WorkoutRepo)?;
+        Ok(())
+    }
+
+    #[instrument(
         skip(self),
         fields(
             workout_id = ?workout_id,

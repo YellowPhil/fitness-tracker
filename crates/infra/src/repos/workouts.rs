@@ -515,6 +515,36 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         Ok(())
     }
 
+    #[instrument(skip(self, set), fields(table = "performed_sets", workout_id = ?workout_id, exercise_id = ?exercise_id, set_index = set_index), err)]
+    async fn update_set(
+        &self,
+        workout_id: &WorkoutId,
+        exercise_id: &ExerciseId,
+        set_index: usize,
+        set: &PerformedSet,
+    ) -> Result<(), Self::RepoError> {
+        let set_order = to_i32(set_index, "set_order")?;
+        let stored = StoredSet::from_domain(set)?;
+
+        sqlx::query(
+            "UPDATE performed_sets
+             SET reps = $5, load_type = $6, weight_value = $7, weight_units = $8
+             WHERE workout_id = $1 AND user_id = $2 AND exercise_id = $3 AND set_order = $4",
+        )
+        .bind(workout_id.as_uuid())
+        .bind(self.user_id.as_i64())
+        .bind(exercise_id.as_uuid())
+        .bind(set_order)
+        .bind(stored.reps)
+        .bind(stored.load_type)
+        .bind(stored.weight_value)
+        .bind(stored.weight_units)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
     #[instrument(skip(self), fields(table = "performed_sets", workout_id = ?workout_id, exercise_id = ?exercise_id, set_index = set_index), err)]
     async fn remove_set(
         &self,

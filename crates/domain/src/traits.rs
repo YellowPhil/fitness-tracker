@@ -72,6 +72,14 @@ pub trait WorkoutRepo {
         exercise_id: &ExerciseId,
     ) -> Result<(), Self::RepoError>;
 
+    async fn update_set(
+        &self,
+        workout_id: &WorkoutId,
+        exercise_id: &ExerciseId,
+        set_index: usize,
+        set: &PerformedSet,
+    ) -> Result<(), Self::RepoError>;
+
     async fn remove_set(
         &self,
         workout_id: &WorkoutId,

@@ -340,6 +340,24 @@ export async function addSetApi(
   );
 }
 
+export async function updateSetApi(
+  workoutId: string,
+  exerciseId: string,
+  setIndex: number,
+  set: PerformedSet,
+): Promise<void> {
+  await apiFetch(
+    `/api/workouts/${encodeURIComponent(workoutId)}/exercises/${encodeURIComponent(exerciseId)}/sets/${setIndex}`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        reps: set.reps,
+        load: mapLoadToApi(set.kind),
+      }),
+    },
+  );
+}
+
 export async function removeSetApi(
   workoutId: string,
   exerciseId: string,
