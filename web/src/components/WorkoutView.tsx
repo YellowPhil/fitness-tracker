@@ -279,24 +279,101 @@ function ExerciseEntry({
   const removeExerciseFromWorkout = useStore(
     (s) => s.removeExerciseFromWorkout,
   );
+  const headerRef = useRef<HTMLDivElement>(null);
+  const touchStart = useRef({ x: 0, y: 0 });
+  const swipeActive = useRef(false);
+  const removing = useRef(false);
+  const [dragX, setDragX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
 
   const isWeighted = exercise?.kind === "Weighted";
 
+  function clampSwipe(value: number) {
+    const width = headerRef.current?.offsetWidth ?? 0;
+    const min = -Math.floor(width * 0.5);
+    return Math.max(min, Math.min(0, value));
+  }
+
+  function onTouchStart(e: React.TouchEvent) {
+    if (removing.current) return;
+    touchStart.current = {
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    };
+    swipeActive.current = false;
+    setIsDragging(false);
+  }
+
+  function onTouchMove(e: React.TouchEvent) {
+    if (removing.current) return;
+    const dx = e.touches[0].clientX - touchStart.current.x;
+    const dy = e.touches[0].clientY - touchStart.current.y;
+    if (!swipeActive.current) {
+      if (Math.abs(dy) > Math.abs(dx)) return;
+      swipeActive.current = true;
+      setIsDragging(true);
+    }
+    if (!swipeActive.current) return;
+    if (dx > 0) {
+      setDragX(0);
+      return;
+    }
+    e.preventDefault();
+    setDragX(clampSwipe(dx));
+  }
+
+  function onTouchEnd() {
+    if (!swipeActive.current || removing.current) return;
+    swipeActive.current = false;
+    setIsDragging(false);
+    const width = headerRef.current?.offsetWidth ?? 0;
+    const threshold = width * 0.4;
+    if (Math.abs(dragX) > threshold) {
+      removing.current = true;
+      setDragX(-width);
+      window.setTimeout(() => {
+        void removeExerciseFromWorkout(workoutId, entry.exerciseId);
+      }, 180);
+      return;
+    }
+    setDragX(0);
+  }
+
   return (
     <div className="px-4 py-3">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-sm font-medium text-fg truncate">
-            {exercise?.name ?? "Unknown Exercise"}
-          </span>
-          <span className="shrink-0 text-[0.6rem] uppercase tracking-wider text-fg-muted bg-surface-2 px-1.5 py-0.5 rounded">
-            {exercise?.muscleGroup}
-          </span>
+      <div className="mb-2 relative overflow-hidden rounded-lg">
+        <div className="absolute inset-0 flex items-center justify-end bg-danger/15 text-danger px-3">
+          <div className="flex items-center gap-1 text-[0.65rem] font-semibold uppercase tracking-wide">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 6h18" />
+              <path d="M8 6V4h8v2" />
+              <path d="M6 6l1 14h10l1-14" />
+            </svg>
+            Delete
+          </div>
         </div>
-        <RemoveButton
-          onClick={() => void removeExerciseFromWorkout(workoutId, entry.exerciseId)}
-          label="Remove exercise"
-        />
+        <div
+          ref={headerRef}
+          className={cn(
+            "flex items-center justify-between bg-surface-1 touch-pan-y",
+            isDragging ? "" : "transition-transform duration-200",
+          )}
+          style={{ transform: `translateX(${dragX}px)` }}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+          onTouchCancel={onTouchEnd}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-sm font-medium text-fg truncate">
+              {exercise?.name ?? "Unknown Exercise"}
+            </span>
+            <span className="shrink-0 text-[0.6rem] uppercase tracking-wider text-fg-muted bg-surface-2 px-1.5 py-0.5 rounded">
+              {exercise?.muscleGroup}
+            </span>
+          </div>
+          <div className="w-5 h-5" aria-hidden="true" />
+        </div>
       </div>
 
       {entry.sets.length > 0 && (
