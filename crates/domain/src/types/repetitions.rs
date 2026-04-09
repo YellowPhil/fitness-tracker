@@ -1,4 +1,4 @@
-use crate::types::Weight;
+use crate::types::units::Weight;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoadType {

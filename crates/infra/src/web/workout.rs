@@ -3,7 +3,7 @@ use std::sync::Arc;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::{Json, Router};
-use domain::excercise::{
+use domain::types::{
     ExerciseId, LoadType, MuscleGroup, PerformedSet, Workout, WorkoutExercise, WorkoutId,
 };
 use domain::types::Weight;

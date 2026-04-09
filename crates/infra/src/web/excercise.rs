@@ -1,7 +1,7 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::{Json, Router};
-use domain::excercise::{Exercise, ExerciseId, ExerciseKind, ExerciseSource, MuscleGroup};
+use domain::types::{Exercise, ExerciseId, ExerciseKind, ExerciseSource, MuscleGroup};
 use serde::{Deserialize, Serialize};
 use tracing::instrument;
 

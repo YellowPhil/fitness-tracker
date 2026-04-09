@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use serde::Deserialize;
 
-use domain::excercise::{ExerciseKind, MuscleGroup};
+use domain::types::{ExerciseKind, MuscleGroup};
 use domain::types::{HeightUnits, WeightUnits};
 
 /// Maximum byte length for free-form name fields.

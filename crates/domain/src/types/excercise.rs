@@ -1,4 +1,4 @@
-use crate::excercise::MuscleGroup;
+use crate::types::MuscleGroup;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ExerciseId(uuid::Uuid);
@@ -83,6 +83,12 @@ impl ExerciseMetadata {
                 .secondary_muscle_groups
                 .as_ref()
                 .is_some_and(|groups| groups.contains(&muscle_group))
+    }
+}
+
+impl Default for ExerciseId {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

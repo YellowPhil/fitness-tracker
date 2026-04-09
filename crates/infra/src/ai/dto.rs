@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use domain::excercise::MuscleGroup;
+use domain::types::MuscleGroup;
 use serde::Deserialize;
 
 #[derive(serde::Deserialize)]

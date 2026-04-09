@@ -12,8 +12,9 @@ use async_openai::types::chat::{
     ChatCompletionTools, CreateChatCompletionRequestArgs, FunctionObjectArgs, ResponseFormat,
     ResponseFormatJsonSchema, ToolChoiceOptions,
 };
+
 use domain::{
-    excercise::{
+    types::{
         Exercise, ExerciseId, ExerciseKind, LoadType, MuscleGroup, PerformedSet, WorkoutExercise,
     },
     traits::ExcerciseRepo,
@@ -112,10 +113,7 @@ impl WorkoutGenerator {
             .max_completion_tokens(MAX_TOKENS)
             .model(MODEL)
             .messages(initial_messages.clone())
-            .tools(vec![
-                workout_query_tool().into(),
-                exercise_query_tool().into(),
-            ])
+            .tools(vec![workout_query_tool(), exercise_query_tool()])
             .tool_choice(ChatCompletionToolChoiceOption::Mode(
                 ToolChoiceOptions::Required,
             ))
@@ -502,16 +500,16 @@ async fn execute_query_workouts(
         .with_context(|| "Invalid arguments for workout query tool")?;
 
     let date = match arguments.date {
-        Some(date) => domain::excercise::QueryType::OnDate(date),
+        Some(date) => domain::types::QueryType::OnDate(date),
         None => match arguments.last_n {
-            Some(count) => domain::excercise::QueryType::LastN(count),
-            None => domain::excercise::QueryType::Latest,
+            Some(count) => domain::types::QueryType::LastN(count),
+            None => domain::types::QueryType::Latest,
         },
     };
 
     let result = databases
         .gym_app(user_id)
-        .query_workout_resource(domain::excercise::WorkoutQuery {
+        .query_workout_resource(domain::types::WorkoutQuery {
             date,
             muscle_group: Some(arguments.muscle_group),
         })
@@ -543,7 +541,7 @@ async fn execute_list_exercises(
 
     let metadata = result
         .iter()
-        .map(domain::excercise::Exercise::metadata)
+        .map(domain::types::Exercise::metadata)
         .collect::<Vec<_>>();
 
     Ok(super::format::format_exercises(
@@ -575,8 +573,7 @@ fn exercise_query_tool() -> ChatCompletionTools {
             }))
             .strict(true)
             .build()
-            .unwrap()
-            .into(),
+            .unwrap(),
     })
 }
 
@@ -614,7 +611,6 @@ fn workout_query_tool() -> ChatCompletionTools {
             .strict(false)
             .build()
             .unwrap()
-            .into(),
     })
 }
 
@@ -630,7 +626,6 @@ fn health_query_tool() -> ChatCompletionTools {
                 "additionalProperties": false,
             }))
             .build()
-            .unwrap()
-            .into(),
+            .unwrap(),
     })
 }

@@ -1,5 +1,5 @@
 use domain::{
-    excercise::{Exercise, ExerciseId, ExerciseKind, ExerciseMetadata, MuscleGroup},
+    types::{Exercise, ExerciseId, ExerciseKind, ExerciseMetadata, MuscleGroup},
     traits::ExcerciseRepo,
     types::UserId,
 };
@@ -183,7 +183,7 @@ fn metadata_from_row(row: PgRow) -> ExerciseMetadata {
 
 #[cfg(test)]
 mod tests {
-    use domain::excercise::{ExerciseKind, ExerciseSource, MuscleGroup};
+    use domain::types::{ExerciseKind, ExerciseSource, MuscleGroup};
 
     use crate::repos::postgres_types::{PgExerciseKind, PgExerciseSource, PgMuscleGroup};
 

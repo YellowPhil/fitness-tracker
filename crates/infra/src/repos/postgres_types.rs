@@ -1,5 +1,5 @@
 use domain::{
-    excercise::{ExerciseKind, ExerciseSource, MuscleGroup, WorkoutSource},
+    types::{ExerciseKind, ExerciseSource, MuscleGroup, WorkoutSource},
     types::{HeightUnits, WeightUnits},
 };
 

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Write;
 
-use domain::excercise::{ExerciseId, ExerciseMetadata, LoadType, MuscleGroup, Workout};
+use domain::types::{ExerciseId, ExerciseMetadata, LoadType, MuscleGroup, Workout};
 
 pub(super) fn format_workouts(
     workouts: &[Workout],

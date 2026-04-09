@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
 use domain::{
-    excercise::{
+    traits::*,
+    types::{
         Exercise, ExerciseId, ExerciseKind, ExerciseMetadata, ExerciseSource, MuscleGroup,
         PerformedSet, QueryType, Workout, WorkoutExercise, WorkoutId, WorkoutQuery, catalog,
     },
-    traits::*,
 };
 use time::{Date, OffsetDateTime};
 use tracing::{debug, instrument};

@@ -1,5 +1,5 @@
 use domain::{
-    excercise::{
+    types::{
         ExerciseId, LoadType, PerformedSet, Workout, WorkoutExercise, WorkoutId, WorkoutSource,
     },
     traits::WorkoutRepo,
@@ -698,7 +698,7 @@ fn count_to_i32(value: i64, field: &'static str) -> Result<i32, PostgresWorkoutR
 #[cfg(test)]
 mod tests {
     use domain::{
-        excercise::LoadType,
+        types::LoadType,
         types::{Weight, WeightUnits},
     };
 
@@ -708,7 +708,7 @@ mod tests {
 
     #[test]
     fn stored_set_round_trips_weighted_loads() {
-        let stored = StoredSet::from_domain(&domain::excercise::PerformedSet {
+        let stored = StoredSet::from_domain(&domain::types::PerformedSet {
             reps: 8,
             kind: LoadType::Weighted(Weight::new(185.0, WeightUnits::Pounds)),
         })
@@ -730,7 +730,7 @@ mod tests {
 
     #[test]
     fn stored_set_round_trips_bodyweight_loads() {
-        let stored = StoredSet::from_domain(&domain::excercise::PerformedSet {
+        let stored = StoredSet::from_domain(&domain::types::PerformedSet {
             reps: 15,
             kind: LoadType::BodyWeight,
         })

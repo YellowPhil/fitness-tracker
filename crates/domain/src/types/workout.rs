@@ -1,6 +1,6 @@
 use time::OffsetDateTime;
 
-use crate::excercise::{ExerciseId, PerformedSet};
+use crate::types::{ExerciseId, repetitions::PerformedSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WorkoutId(uuid::Uuid);
@@ -85,6 +85,12 @@ impl Workout {
     }
 }
 
+impl Default for WorkoutId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WorkoutId {
     pub fn new() -> Self {
         Self(uuid::Uuid::new_v4())
@@ -121,10 +127,7 @@ mod tests {
         for s in [WorkoutSource::Manual, WorkoutSource::AiGenerated] {
             assert_eq!(WorkoutSource::parse_api_str(s.as_api_str()), Some(s));
         }
-        assert_eq!(
-            WorkoutSource::Manual.as_api_str(),
-            workout_source::MANUAL
-        );
+        assert_eq!(WorkoutSource::Manual.as_api_str(), workout_source::MANUAL);
         assert_eq!(
             WorkoutSource::AiGenerated.as_api_str(),
             workout_source::AI_GENERATED

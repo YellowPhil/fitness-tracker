@@ -1,7 +1,7 @@
 use time::Date;
 
 use crate::{
-    excercise::{
+    types::{
         Exercise, ExerciseId, ExerciseMetadata, MuscleGroup, PerformedSet, Workout,
         WorkoutExercise, WorkoutId,
     },
