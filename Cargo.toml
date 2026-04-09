@@ -5,7 +5,12 @@ edition = "2024"
 default-run = "backend"
 
 [workspace]
-members = ["crates/application", "crates/domain", "crates/infra"]
+members = [
+    "crates/application",
+    "crates/domain",
+    "crates/infra",
+    "crates/fitness-tracker-proto",
+]
 
 [workspace.dependencies]
 time = "0.3.47"
@@ -13,6 +18,8 @@ domain = { path = "crates/domain" }
 tracing = "0.1"
 async-trait = "0.1.89"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tonic = { version = "0.12", features = ["transport"] }
+prost = "0.13"
 
 [dependencies]
 application = { path = "crates/application" }

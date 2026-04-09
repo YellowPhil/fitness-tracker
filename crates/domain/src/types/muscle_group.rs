@@ -1,4 +1,3 @@
-
 use strum::IntoEnumIterator;
 
 #[derive(

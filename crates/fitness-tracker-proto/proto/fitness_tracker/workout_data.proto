@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package fitness_tracker.workout_data;
+
+import "fitness_tracker/common.proto";
+
+service WorkoutDataService {
+  rpc GetExerciseCatalog(GetExerciseCatalogRequest) returns (GetExerciseCatalogResponse);
+  rpc QueryWorkouts(QueryWorkoutsRequest) returns (QueryWorkoutsResponse);
+  rpc ListExercises(ListExercisesRequest) returns (ListExercisesResponse);
+}
+
+message GetExerciseCatalogRequest {
+  int64 user_id = 1;
+  repeated fitness_tracker.common.MuscleGroup muscle_groups = 2;
+}
+
+message GetExerciseCatalogResponse {
+  repeated fitness_tracker.common.ExerciseCatalogItem exercises = 1;
+}
+
+message QueryWorkoutsRequest {
+  int64 user_id = 1;
+  fitness_tracker.common.MuscleGroup muscle_group = 2;
+  optional string date = 3;
+  optional int32 last_n = 4;
+}
+
+message QueryWorkoutsResponse {
+  string content = 1;
+}
+
+message ListExercisesRequest {
+  int64 user_id = 1;
+  fitness_tracker.common.MuscleGroup muscle_group = 2;
+}
+
+message ListExercisesResponse {
+  string content = 1;
+}

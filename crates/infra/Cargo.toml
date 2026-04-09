@@ -8,6 +8,8 @@ domain = { workspace = true }
 async-trait = { workspace = true }
 tracing = { workspace = true }
 time = { workspace = true, features = ["serde", "serde-well-known"] }
+tonic = { workspace = true }
+fitness-tracker-proto = { path = "../fitness-tracker-proto" }
 
 application = { path = "../application" }
 

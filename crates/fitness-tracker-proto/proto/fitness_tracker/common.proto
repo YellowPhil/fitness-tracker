@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package fitness_tracker.common;
+
+enum MuscleGroup {
+  MUSCLE_GROUP_UNSPECIFIED = 0;
+  CHEST = 1;
+  BACK = 2;
+  SHOULDERS = 3;
+  ARMS = 4;
+  LEGS = 5;
+  CORE = 6;
+}
+
+enum ExerciseKind {
+  EXERCISE_KIND_UNSPECIFIED = 0;
+  WEIGHTED = 1;
+  BODY_WEIGHT = 2;
+}
+
+message ExerciseCatalogItem {
+  string exercise_id = 1;
+  string name = 2;
+  ExerciseKind kind = 3;
+  MuscleGroup muscle_group = 4;
+}

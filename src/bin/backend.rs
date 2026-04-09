@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use fitness_tracker::init_tracing;
-use infra::{Databases, http_router};
+use infra::{Databases, grpc, http_router};
 use tokio::net::TcpListener;
 use tracing::instrument;
 
@@ -58,6 +58,11 @@ async fn run() -> anyhow::Result<()> {
         .parse()
         .context("parse BIND_ADDR")?;
 
+    let grpc_addr: SocketAddr = env::var("GRPC_BIND_ADDR")
+        .unwrap_or_else(|_| "0.0.0.0:50051".into())
+        .parse()
+        .context("parse GRPC_BIND_ADDR")?;
+
     let openai_api_key = env::var("OPENAI_API_KEY")
         .ok()
         .filter(|s| !s.trim().is_empty());
@@ -73,7 +78,7 @@ async fn run() -> anyhow::Result<()> {
         .filter(|ids| !ids.is_empty());
 
     let app = http_router(
-        dbs,
+        Arc::clone(&dbs),
         frontend_url.as_deref(),
         bot_token,
         dev_skip_auth,
@@ -85,7 +90,11 @@ async fn run() -> anyhow::Result<()> {
         .with_context(|| format!("bind {addr}"))?;
 
     tracing::info!(%addr, "HTTP server listening (API + static UI when web/dist exists)");
+    tracing::info!(%grpc_addr, "gRPC server listening (WorkoutDataService)");
 
-    axum::serve(listener, app).await.context("HTTP server")?;
+    let http_server = async move { axum::serve(listener, app).await.context("HTTP server") };
+    let grpc_server = grpc::serve_workout_data(grpc_addr, dbs);
+
+    tokio::try_join!(http_server, grpc_server)?;
     Ok(())
 }

@@ -1,11 +1,11 @@
 use time::Date;
 
 use crate::{
+    health::HealthParams,
     types::{
         Exercise, ExerciseId, ExerciseMetadata, MuscleGroup, PerformedSet, Workout,
         WorkoutExercise, WorkoutId,
     },
-    health::HealthParams,
 };
 
 #[async_trait::async_trait]
