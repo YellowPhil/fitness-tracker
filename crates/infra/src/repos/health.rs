@@ -55,16 +55,13 @@ impl HealthRepo for PostgresHealthRepo {
         .fetch_optional(&self.pool)
         .await?;
 
-        Ok(row
-            .map(health_from_row)
-            .transpose()?
-            .unwrap_or_else(|| {
-                HealthParams::new(
-                    Height::new(170.0, HeightUnits::Centimeters),
-                    Weight::new(70.0, WeightUnits::Kilograms),
-                    25,
-                )
-            }))
+        Ok(row.map(health_from_row).transpose()?.unwrap_or_else(|| {
+            HealthParams::new(
+                Height::new(170.0, HeightUnits::Centimeters),
+                Weight::new(70.0, WeightUnits::Kilograms),
+                25,
+            )
+        }))
     }
 
     #[instrument(skip(self, params), fields(table = "health_params"), err)]
@@ -130,11 +127,17 @@ mod tests {
             PgWeightUnits::from(WeightUnits::Kilograms),
             PgWeightUnits::Kilograms
         );
-        assert_eq!(WeightUnits::from(PgWeightUnits::Pounds), WeightUnits::Pounds);
+        assert_eq!(
+            WeightUnits::from(PgWeightUnits::Pounds),
+            WeightUnits::Pounds
+        );
         assert_eq!(
             PgHeightUnits::from(HeightUnits::Centimeters),
             PgHeightUnits::Centimeters
         );
-        assert_eq!(HeightUnits::from(PgHeightUnits::Inches), HeightUnits::Inches);
+        assert_eq!(
+            HeightUnits::from(PgHeightUnits::Inches),
+            HeightUnits::Inches
+        );
     }
 }

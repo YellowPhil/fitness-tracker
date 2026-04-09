@@ -3,10 +3,10 @@ use std::sync::Arc;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::{Json, Router};
+use domain::types::Weight;
 use domain::types::{
     ExerciseId, LoadType, MuscleGroup, PerformedSet, Workout, WorkoutExercise, WorkoutId,
 };
-use domain::types::Weight;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tracing::instrument;
@@ -252,8 +252,11 @@ async fn generate_workout_ai(
         ));
     }
 
-    let muscle_groups: Vec<MuscleGroup> =
-        body.muscle_groups.into_iter().map(MuscleGroup::from).collect();
+    let muscle_groups: Vec<MuscleGroup> = body
+        .muscle_groups
+        .into_iter()
+        .map(MuscleGroup::from)
+        .collect();
 
     let dbs = Arc::clone(&state.databases);
     let app = state.databases.gym_app(user.0);

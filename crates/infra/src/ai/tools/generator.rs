@@ -20,10 +20,12 @@ use super::constants::{EXERCISE_LIST_TOOL, MAX_TOKENS, MODEL, WORKOUT_QUERY_TOOL
 use super::exercise_data::{
     exercises_by_lowercase_name, load_exercises_for_muscle_groups, sorted_exercise_names,
 };
-use super::prompt::{build_user_message_content, SYSTEM_PROMPT};
+use super::prompt::{SYSTEM_PROMPT, build_user_message_content};
 use super::resolve::resolve_workout;
 use super::schema::workout_response_schema;
-use super::tools::{execute_list_exercises, execute_query_workouts, exercise_query_tool, workout_query_tool};
+use super::tools::{
+    execute_list_exercises, execute_query_workouts, exercise_query_tool, workout_query_tool,
+};
 
 /// Result of [`WorkoutGenerator::generate_workout`]: a name and exercises ready to attach to a workout.
 #[derive(Debug, Clone)]

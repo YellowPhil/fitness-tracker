@@ -182,9 +182,7 @@ impl From<PgHeightUnits> for HeightUnits {
     }
 }
 
-pub(crate) fn to_pg_muscle_groups(
-    values: &Option<Vec<MuscleGroup>>,
-) -> Option<Vec<PgMuscleGroup>> {
+pub(crate) fn to_pg_muscle_groups(values: &Option<Vec<MuscleGroup>>) -> Option<Vec<PgMuscleGroup>> {
     values
         .as_ref()
         .map(|groups| groups.iter().copied().map(Into::into).collect())

@@ -8,8 +8,8 @@ use domain::types::{MuscleGroup, UserId};
 
 use tracing::instrument;
 
-use crate::ai::{dto, format};
 use crate::Databases;
+use crate::ai::{dto, format};
 
 use super::constants::{EXERCISE_LIST_TOOL, WORKOUT_QUERY_TOOL};
 

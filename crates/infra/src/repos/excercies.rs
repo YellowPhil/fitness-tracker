@@ -1,7 +1,7 @@
 use domain::{
-    types::{Exercise, ExerciseId, ExerciseKind, ExerciseMetadata, MuscleGroup},
     traits::ExcerciseRepo,
     types::UserId,
+    types::{Exercise, ExerciseId, ExerciseKind, ExerciseMetadata, MuscleGroup},
 };
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
 use tracing::instrument;

@@ -46,18 +46,6 @@ where
         .map_err(serde::de::Error::custom)
         .map(Some)
 }
-
-fn deserialize_date<'de, D>(deserializer: D) -> Result<time::Date, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let input = <&str>::deserialize(deserializer)?;
-
-    let format = time::format_description::parse_borrowed::<2>(DATE_FORMAT)
-        .map_err(serde::de::Error::custom)?;
-    time::Date::parse(input, &format).map_err(serde::de::Error::custom)
-}
-
 /// Parsed structured output from the model (matches `workout_response_schema`).
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

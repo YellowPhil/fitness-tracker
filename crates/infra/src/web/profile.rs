@@ -52,7 +52,6 @@ impl From<HealthParams> for ProfileResponse {
     }
 }
 
-
 #[instrument(skip(state, user), fields(user_id = user.0.as_i64()))]
 async fn get_profile(
     user: AuthUser,

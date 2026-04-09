@@ -1,8 +1,8 @@
 use domain::{
+    traits::WorkoutRepo,
     types::{
         ExerciseId, LoadType, PerformedSet, Workout, WorkoutExercise, WorkoutId, WorkoutSource,
     },
-    traits::WorkoutRepo,
     types::{UserId, Weight, WeightUnits},
 };
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
@@ -141,7 +141,10 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         let mut workouts = Vec::with_capacity(rows.len());
         for row in rows {
             let (id, name, start_date, end_date, source) = workout_header_from_row(row);
-            workouts.push(self.build_workout(id, name, start_date, end_date, source).await?);
+            workouts.push(
+                self.build_workout(id, name, start_date, end_date, source)
+                    .await?,
+            );
         }
         Ok(workouts)
     }
@@ -193,21 +196,17 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         .execute(&mut *tx)
         .await?;
 
-        sqlx::query(
-            "DELETE FROM performed_sets WHERE workout_id = $1 AND user_id = $2",
-        )
-        .bind(workout.id.as_uuid())
-        .bind(self.user_id.as_i64())
-        .execute(&mut *tx)
-        .await?;
+        sqlx::query("DELETE FROM performed_sets WHERE workout_id = $1 AND user_id = $2")
+            .bind(workout.id.as_uuid())
+            .bind(self.user_id.as_i64())
+            .execute(&mut *tx)
+            .await?;
 
-        sqlx::query(
-            "DELETE FROM workout_exercises WHERE workout_id = $1 AND user_id = $2",
-        )
-        .bind(workout.id.as_uuid())
-        .bind(self.user_id.as_i64())
-        .execute(&mut *tx)
-        .await?;
+        sqlx::query("DELETE FROM workout_exercises WHERE workout_id = $1 AND user_id = $2")
+            .bind(workout.id.as_uuid())
+            .bind(self.user_id.as_i64())
+            .execute(&mut *tx)
+            .await?;
 
         for (entry_order, entry) in workout.entries.iter().enumerate() {
             let entry_order = to_i32(entry_order, "entry_order")?;
@@ -380,7 +379,10 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         let mut workouts = Vec::with_capacity(rows.len());
         for row in rows {
             let (id, name, start_date, end_date, source) = workout_header_from_row(row);
-            workouts.push(self.build_workout(id, name, start_date, end_date, source).await?);
+            workouts.push(
+                self.build_workout(id, name, start_date, end_date, source)
+                    .await?,
+            );
         }
         Ok(workouts)
     }
@@ -428,7 +430,10 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         let mut workouts = Vec::with_capacity(rows.len());
         for row in rows {
             let (id, name, start_date, end_date, source) = workout_header_from_row(row);
-            workouts.push(self.build_workout(id, name, start_date, end_date, source).await?);
+            workouts.push(
+                self.build_workout(id, name, start_date, end_date, source)
+                    .await?,
+            );
         }
         Ok(workouts)
     }
@@ -504,14 +509,15 @@ impl WorkoutRepo for PostgresWorkoutRepo {
     }
 
     #[instrument(skip(self), fields(table = "workout_exercises", exercise_id = ?exercise_id), err)]
-    async fn remove_exercise_from_all(&self, exercise_id: &ExerciseId) -> Result<(), Self::RepoError> {
-        sqlx::query(
-            "DELETE FROM workout_exercises WHERE exercise_id = $1 AND user_id = $2",
-        )
-        .bind(exercise_id.as_uuid())
-        .bind(self.user_id.as_i64())
-        .execute(&self.pool)
-        .await?;
+    async fn remove_exercise_from_all(
+        &self,
+        exercise_id: &ExerciseId,
+    ) -> Result<(), Self::RepoError> {
+        sqlx::query("DELETE FROM workout_exercises WHERE exercise_id = $1 AND user_id = $2")
+            .bind(exercise_id.as_uuid())
+            .bind(self.user_id.as_i64())
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -598,7 +604,10 @@ impl WorkoutRepo for PostgresWorkoutRepo {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(rows.into_iter().map(|row| row.get("workout_date")).collect())
+        Ok(rows
+            .into_iter()
+            .map(|row| row.get("workout_date"))
+            .collect())
     }
 }
 
@@ -612,12 +621,11 @@ struct StoredSet {
 
 impl StoredSet {
     fn from_domain(value: &PerformedSet) -> Result<Self, PostgresWorkoutRepoError> {
-        let reps = i32::try_from(value.reps).map_err(|_| {
-            PostgresWorkoutRepoError::ValueOutOfRange {
+        let reps =
+            i32::try_from(value.reps).map_err(|_| PostgresWorkoutRepoError::ValueOutOfRange {
                 field: "reps",
                 value: value.reps as usize,
-            }
-        })?;
+            })?;
 
         let (load_type, weight_value, weight_units) = match &value.kind {
             LoadType::Weighted(weight) => (
@@ -717,7 +725,9 @@ mod tests {
         assert_eq!(stored.load_type, PgLoadType::Weighted);
         assert_eq!(stored.weight_units, Some(PgWeightUnits::Pounds));
 
-        let restored = stored.into_domain().expect("set should convert from storage");
+        let restored = stored
+            .into_domain()
+            .expect("set should convert from storage");
         match restored.kind {
             LoadType::Weighted(weight) => {
                 assert_eq!(weight.value, 185.0);
@@ -740,7 +750,9 @@ mod tests {
         assert_eq!(stored.weight_value, None);
         assert_eq!(stored.weight_units, None);
 
-        let restored = stored.into_domain().expect("set should convert from storage");
+        let restored = stored
+            .into_domain()
+            .expect("set should convert from storage");
         assert!(matches!(restored.kind, LoadType::BodyWeight));
         assert_eq!(restored.reps, 15);
     }

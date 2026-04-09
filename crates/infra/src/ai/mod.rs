@@ -1,5 +1,5 @@
 mod dto;
-mod format;
+pub(crate) mod format;
 mod tools;
 
 pub use tools::{GeneratedWorkout, WorkoutGenerator};

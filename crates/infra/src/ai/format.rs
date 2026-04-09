@@ -3,7 +3,7 @@ use std::fmt::Write;
 
 use domain::types::{ExerciseId, ExerciseMetadata, LoadType, MuscleGroup, Workout};
 
-pub(super) fn format_workouts(
+pub(crate) fn format_workouts(
     workouts: &[Workout],
     exercises: &HashMap<ExerciseId, ExerciseMetadata>,
     filter: Option<MuscleGroup>,
@@ -75,7 +75,7 @@ fn format_workout(
     }
 }
 
-pub(super) fn format_exercises(
+pub(crate) fn format_exercises(
     exercises: &[ExerciseMetadata],
     filter: Option<MuscleGroup>,
 ) -> String {
