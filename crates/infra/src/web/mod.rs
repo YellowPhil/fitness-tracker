@@ -1,5 +1,4 @@
 pub mod excercise;
-pub mod internal;
 pub mod profile;
 pub mod telegram_auth;
 pub mod types;
@@ -126,7 +125,6 @@ pub fn router(
     });
 
     Router::new()
-        .nest("/internal", internal::routes())
         .nest("/api/exercises", excercise::routes())
         .nest("/api/workouts", workout::routes())
         .nest("/api/profile", profile::routes())
