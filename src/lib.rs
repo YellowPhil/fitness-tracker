@@ -7,7 +7,7 @@ pub fn init_tracing() {
     // per-connection noise.  Application code is kept at `info` by default.
     // Individual targets can be re-enabled via RUST_LOG, e.g.:
     //   RUST_LOG=debug,sqlx=warn
-    const BASE: &str = "info,sqlx=warn,hyper_util=warn,reqwest=warn";
+    const BASE: &str = "info,sqlx=warn,hyper_util=warn,reqwest=warn,h2=warn";
 
     let filter = match std::env::var("RUST_LOG") {
         Ok(env) if !env.is_empty() => {
