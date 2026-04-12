@@ -1,6 +1,9 @@
 FROM lukemathwalker/cargo-chef@sha256:c099c03e8a585e114631935ceb8bc7dbbfcfeed19e336feb305c9ef389030f72 AS chef
 WORKDIR /app
-RUN apt update && apt install libssl-dev pkg-config -y
+RUN apt update && apt install libssl-dev pkg-config curl unzip -y
+RUN PB_REL="https://github.com/protocolbuffers/protobuf/releases" && \
+curl -LO $PB_REL/download/v30.2/protoc-30.2-linux-x86_64.zip && \
+unzip protoc-30.2-linux-x86_64.zip -d /usr/local && rm protoc-30.2-linux-x86_64.zip
 
 FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./

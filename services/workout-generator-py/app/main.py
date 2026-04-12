@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
         WorkoutGeneratorGrpcService(get_generation_service()),
         grpc_server,
     )
-    grpc_bind_address = f"{settings.grpc_server_host}:{settings.grpc_server_port}"
+    grpc_bind_address = settings.grpc_bind_addr
     bound_port = grpc_server.add_insecure_port(grpc_bind_address)
     if bound_port == 0:
         raise RuntimeError(f"Failed to bind gRPC server on {grpc_bind_address}")

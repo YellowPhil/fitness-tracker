@@ -7,14 +7,18 @@ import grpc
 from app.application.errors import ProviderResponseError, ProviderUnavailableError
 from app.application.ports.tool_data_provider import ToolDataProvider
 from app.domain.models import ExerciseCatalogItem
-from app.generated.fitness_tracker import common_pb2, workout_data_pb2, workout_data_pb2_grpc
+from app.generated.fitness_tracker import (
+    common_pb2,
+    workout_data_pb2,
+    workout_data_pb2_grpc,
+)
 from app.infrastructure.config import Settings
 
 
 class GrpcToolDataProvider(ToolDataProvider):
     def __init__(self, settings: Settings):
         self._timeout_seconds = settings.grpc_timeout_seconds
-        target = f"{settings.grpc_rust_host}:{settings.grpc_rust_port}"
+        target = settings.grpc_rust_addr
         self._channel = grpc.aio.insecure_channel(target)
         self._client = workout_data_pb2_grpc.WorkoutDataServiceStub(self._channel)
 
@@ -31,7 +35,9 @@ class GrpcToolDataProvider(ToolDataProvider):
             muscle_groups=[muscle_group_to_proto(value) for value in muscle_groups],
         )
         try:
-            response = await self._client.GetExerciseCatalog(request, timeout=self._timeout_seconds)
+            response = await self._client.GetExerciseCatalog(
+                request, timeout=self._timeout_seconds
+            )
         except grpc.RpcError as exc:
             raise map_grpc_error(exc) from exc
 
@@ -57,7 +63,9 @@ class GrpcToolDataProvider(ToolDataProvider):
             request.last_n = int(arguments["last_n"])
 
         try:
-            response = await self._client.QueryWorkouts(request, timeout=self._timeout_seconds)
+            response = await self._client.QueryWorkouts(
+                request, timeout=self._timeout_seconds
+            )
         except grpc.RpcError as exc:
             raise map_grpc_error(exc) from exc
         return response.content
@@ -69,7 +77,9 @@ class GrpcToolDataProvider(ToolDataProvider):
             muscle_group=muscle_group_to_proto(read_required_muscle_group(arguments)),
         )
         try:
-            response = await self._client.ListExercises(request, timeout=self._timeout_seconds)
+            response = await self._client.ListExercises(
+                request, timeout=self._timeout_seconds
+            )
         except grpc.RpcError as exc:
             raise map_grpc_error(exc) from exc
         return response.content

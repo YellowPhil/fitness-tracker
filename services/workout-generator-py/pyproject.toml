@@ -13,6 +13,7 @@ dependencies = [
   "pydantic>=2.8.0,<3.0.0",
   "pydantic-settings>=2.4.0,<3.0.0",
   "grpcio>=1.80.0,<2.0.0",
+  "protobuf>=6.31.1,<7.0.0",
   "openai>=1.45.0,<2.0.0",
   "structlog>=24.3.0,<25.0.0",
 ]

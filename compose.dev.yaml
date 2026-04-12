@@ -3,6 +3,7 @@
 #
 # Required Coolify env vars:
 #   TELOXIDE_TOKEN (dev bot token)
+#   WG_OPENAI_API_KEY
 # Optional:
 #   BIND_ADDR (default: 0.0.0.0:3001)
 #   FRONTEND_URL (default: unset — same-origin, no CORS needed)
@@ -16,24 +17,50 @@ services:
       dockerfile: deploy/Dockerfile
       target: app
     environment:
-      - BIND_ADDR=${BIND_ADDR:-0.0.0.0:3001}
+      - BIND_ADDR=${BIND_ADDR:-0.0.0.0:3002}
+      - GRPC_BIND_ADDR=${GRPC_BIND_ADDR:-0.0.0.0:50051}
       - FRONTEND_URL=${FRONTEND_URL:-}
-      - TELOXIDE_TOKEN=${TELOXIDE_TOKEN:?Set TELOXIDE_TOKEN}
-      - POSTGRES_URL=${POSTGRES_URL:?Set POSTGRES_URL}
+      - TELOXIDE_TOKEN=${TELOXIDE_TOKEN:-}
+      - POSTGRES_URL=${POSTGRES_URL:-postgres://postgres:postgres@postgres:5432/gym}
       - RUST_LOG=${RUST_LOG:-debug}
-    restart: unless-stopped
-
-  bot:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile
-      target: bot
-    environment:
-      - TELOXIDE_TOKEN=${TELOXIDE_TOKEN:?Set TELOXIDE_TOKEN}
-      - FRONTEND_URL=${FRONTEND_URL:-}
-      - RUST_LOG=${RUST_LOG:-debug}
+      - WORKOUT_GENERATOR_GRPC_URL=${WORKOUT_GENERATOR_GRPC_URL:-http://workout-generator:50052}
+      - DEV_SKIP_AUTH=true
+      - VITE_USER_ID=${VITE_USER_ID:-1}
+    expose:
+      - "50051"
+    ports:
+      - "3002:3002"
     restart: unless-stopped
     depends_on:
-      app:
+      postgres:
         condition: service_healthy
+      workout-generator:
+        condition: service_started
 
+  workout-generator:
+    build:
+      context: ./services/workout-generator-py
+      dockerfile: Dockerfile
+    environment:
+      - WG_APP_ENV=${WG_APP_ENV:-dev}
+      - WG_BIND_ADDR=${WG_BIND_ADDR:-0.0.0.0:8091}
+      - WG_GRPC_BIND_ADDR=${WG_GRPC_BIND_ADDR:-0.0.0.0:50052}
+      - WG_OPENAI_API_KEY=${WG_OPENAI_API_KEY:?Set WG_OPENAI_API_KEY}
+      - WG_OPENAI_MODEL=${WG_OPENAI_MODEL:-gpt-5-mini}
+      - WG_OPENAI_MAX_COMPLETION_TOKENS=${WG_OPENAI_MAX_COMPLETION_TOKENS:-8192}
+      - WG_OPENAI_TIMEOUT_SECONDS=${WG_OPENAI_TIMEOUT_SECONDS:-60}
+      - WG_GRPC_RUST_ADDR=${WG_GRPC_RUST_ADDR:-app:50051}
+      - WG_GRPC_TIMEOUT_SECONDS=${WG_GRPC_TIMEOUT_SECONDS:-10}
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:latest
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=gym
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
