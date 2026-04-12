@@ -26,8 +26,6 @@ services:
       - WORKOUT_GENERATOR_GRPC_URL=${WORKOUT_GENERATOR_GRPC_URL:-http://workout-generator:50052}
       - DEV_SKIP_AUTH=true
       - VITE_USER_ID=${VITE_USER_ID:-1}
-    expose:
-      - "50051"
     ports:
       - "3002:3002"
     restart: unless-stopped
