@@ -57,7 +57,7 @@ cp .env.example .env
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8091
 ```
 
-gRPC bind address is configured via `WG_GRPC_SERVER_HOST` and `WG_GRPC_SERVER_PORT`.
+gRPC bind address is configured via `WG_GRPC_BIND_ADDR`.
 
 ## Tests
 
