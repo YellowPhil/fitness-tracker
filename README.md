@@ -15,23 +15,36 @@ Personal workout tracker delivered as a Telegram Mini App. Log exercises, track 
 
 ```
 ┌──────────────────┐       ┌──────────────────┐
-│  Telegram Bot     │       │  React SPA        │
-│  (bot binary)     │       │  (Cloudflare Pages│
-│  /start → Mini App│       │   or embedded)    │
-└────────┬──────────┘       └────────┬──────────┘
-         │                           │
-         │  Auth: tma <initData>     │
-         └───────────┬───────────────┘
+│  Telegram Bot    │       │  React SPA       │
+│  (bot binary)    │       │  (Pages/embedded)│
+│  /start → MiniApp│       │                  │
+└────────┬─────────┘       └────────┬─────────┘
+         │                          │
+         │ Auth: tma <initData>     │
+         └───────────┬──────────────┘
                      ▼
             ┌──────────────────┐       ┌──────────────────┐
-            │  Axum Backend    │──────▶│  PostgreSQL       │
-            │  (backend binary)│       │  (per-user data)  │
+            │  Axum Backend    │──────▶│  PostgreSQL      │
+            │  (backend binary)│       │  (per-user data) │
             └────────┬─────────┘       └──────────────────┘
                      │
-                     ▼  (optional)
+                     │ gRPC: GenerateWorkout
+                     ▼
             ┌──────────────────┐
-            │  OpenAI API      │
-            │  (workout plans) │
+            │ workout-generator│
+            │ (Python service) │
+            └────────┬─────────┘
+                     │
+                     │ OpenAI API (tool-calling)
+                     ▼
+            ┌──────────────────┐
+            │ OpenAI API       │
+            └──────────────────┘
+                     ▲
+                     │ gRPC: WorkoutDataService (tool data)
+                     │
+            ┌────────┴─────────┐
+            │  Axum Backend    │
             └──────────────────┘
 ```
 
@@ -41,14 +54,14 @@ The Rust workspace is split into three crates following a layered architecture:
 |---|---|
 | `domain` | Types, traits, and business rules (no IO or framework dependencies) |
 | `application` | Use-case orchestration (`GymApp`, `HealthApp`) — depends only on domain traits |
-| `infra` | Concrete implementations: Axum HTTP handlers, teloxide bot, SQLx repos, OpenAI integration |
+| `infra` | Concrete implementations: Axum HTTP handlers, teloxide bot, SQLx repos, gRPC client/server |
 
 Two binaries ship from `src/bin/`:
 
 - **`backend`** — Axum HTTP server (REST API + optional static SPA serving)
 - **`bot`** — Telegram bot that sends the Mini App URL on `/start`
 
-An optional Python microservice (`services/workout-generator-py`) provides an alternative AI workout generation flow via FastAPI + OpenAI tool calling.
+Workout generation is handled by `services/workout-generator-py` (FastAPI + gRPC + OpenAI tool calling). The Rust backend sends generation requests to it over gRPC, and the Python service calls back into the backend's gRPC `WorkoutDataService` to fetch exercise/workout context used by tools.
 
 ## Tech stack
 
