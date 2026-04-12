@@ -92,15 +92,15 @@ pub(crate) fn format_exercises(
         let _ = writeln!(out, "### {}", exercise.name);
         let _ = writeln!(out, "Primary muscle: {}", exercise.muscle_group);
 
-        if let Some(secondary) = exercise.secondary_muscle_groups.as_ref() {
-            if !secondary.is_empty() {
-                let secondary = secondary
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let _ = writeln!(out, "Secondary muscles: {secondary}");
-            }
+        if let Some(secondary) = exercise.secondary_muscle_groups.as_ref()
+            && !secondary.is_empty()
+        {
+            let secondary = secondary
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let _ = writeln!(out, "Secondary muscles: {secondary}");
         }
 
         out.push('\n');

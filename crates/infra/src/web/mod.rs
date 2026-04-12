@@ -99,8 +99,8 @@ pub struct InnerState {
     pub bot_token: Option<String>,
     /// When `true` and `bot_token` is `None`, accept legacy `x-user-id` (local dev only).
     pub dev_skip_auth: bool,
-    /// OpenAI API key for AI workout generation (`POST /api/workouts/generate`).
-    pub openai_api_key: Option<String>,
+    /// gRPC address for workout generation service (for `POST /api/workouts/generate`).
+    pub workout_generator_grpc_addr: String,
     /// When `Some`, only the listed Telegram user IDs may access the API.
     /// When `None`, every authenticated user is allowed.
     pub allowed_user_ids: Option<Vec<i64>>,
@@ -113,14 +113,14 @@ pub fn router(
     dbs: Arc<Databases>,
     bot_token: Option<String>,
     dev_skip_auth: bool,
-    openai_api_key: Option<String>,
+    workout_generator_grpc_addr: String,
     allowed_user_ids: Option<Vec<i64>>,
 ) -> Router<()> {
     let state: AppState = Arc::new(InnerState {
         databases: dbs,
         bot_token,
         dev_skip_auth,
-        openai_api_key,
+        workout_generator_grpc_addr,
         allowed_user_ids,
     });
 
@@ -140,14 +140,14 @@ pub fn http_router(
     frontend_url: Option<&str>,
     bot_token: Option<String>,
     dev_skip_auth: bool,
-    openai_api_key: Option<String>,
+    workout_generator_grpc_addr: String,
     allowed_user_ids: Option<Vec<i64>>,
 ) -> Router<()> {
     let api = router(
         dbs,
         bot_token,
         dev_skip_auth,
-        openai_api_key,
+        workout_generator_grpc_addr,
         allowed_user_ids,
     );
     let dist = Path::new("web/dist");
@@ -221,11 +221,11 @@ impl FromRequestParts<AppState> for AuthUser {
             return Err(ApiError::Unauthorized);
         };
 
-        if let Some(ref allowed) = state.allowed_user_ids {
-            if !allowed.contains(&user_id) {
-                warn!(user_id, "rejected: user not in allowlist");
-                return Err(ApiError::Forbidden);
-            }
+        if let Some(ref allowed) = state.allowed_user_ids
+            && !allowed.contains(&user_id)
+        {
+            warn!(user_id, "rejected: user not in allowlist");
+            return Err(ApiError::Forbidden);
         }
 
         Ok(AuthUser(UserId::new(user_id)))

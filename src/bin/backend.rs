@@ -63,9 +63,8 @@ async fn run() -> anyhow::Result<()> {
         .parse()
         .context("parse GRPC_BIND_ADDR")?;
 
-    let openai_api_key = env::var("OPENAI_API_KEY")
-        .ok()
-        .filter(|s| !s.trim().is_empty());
+    let workout_generator_grpc_addr =
+        env::var("WORKOUT_GENERATOR_GRPC_URL").unwrap_or_else(|_| "http://127.0.0.1:50052".into());
 
     let allowed_user_ids = env::var("ALLOWED_USER_IDS")
         .ok()
@@ -82,7 +81,7 @@ async fn run() -> anyhow::Result<()> {
         frontend_url.as_deref(),
         bot_token,
         dev_skip_auth,
-        openai_api_key,
+        workout_generator_grpc_addr,
         allowed_user_ids,
     );
     let listener = TcpListener::bind(addr)
