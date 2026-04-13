@@ -130,9 +130,7 @@ fn check_auth_date(params: &BTreeMap<String, String>, max_age: Duration) -> Resu
         warn!("auth_date is in the future");
         return Err(AuthError::InvalidAuthDate);
     }
-    let elapsed = now
-        .duration_since(auth_time)
-        .unwrap_or_else(|_| Duration::ZERO);
+    let elapsed = now.duration_since(auth_time).unwrap_or(Duration::ZERO);
     if elapsed > max_age {
         warn!(?elapsed, "initData expired");
         return Err(AuthError::Expired);

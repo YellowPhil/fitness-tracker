@@ -21,6 +21,7 @@ services:
       - RUST_LOG=${RUST_LOG:-info}
       - ALLOWED_USER_IDS=${ALLOWED_USER_IDS}
       - WORKOUT_GENERATOR_GRPC_URL=${WORKOUT_GENERATOR_GRPC_URL:-http://workout-generator:50052}
+      - GRPC_TIMEOUT_SECONDS=${GRPC_TIMEOUT_SECONDS:-60}
     restart: unless-stopped
 
   workout-generator:

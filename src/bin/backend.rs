@@ -8,6 +8,9 @@ use infra::{Databases, grpc, http_router};
 use tokio::net::TcpListener;
 use tracing::instrument;
 
+/// Default gRPC timeout for the workout generator service. Since it's a long-running operation, we set a higher timeout than the default.
+const DEFAULT_GRPC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
 #[tokio::main]
 async fn main() {
     init_tracing();
@@ -76,6 +79,15 @@ async fn run() -> anyhow::Result<()> {
         })
         .filter(|ids| !ids.is_empty());
 
+    let grpc_timeout = env::var("GRPC_TIMEOUT_SECONDS")
+        .map(|timeout_str| {
+            timeout_str
+                .parse::<u64>()
+                .map(std::time::Duration::from_secs)
+                .unwrap_or(DEFAULT_GRPC_TIMEOUT)
+        })
+        .unwrap_or(DEFAULT_GRPC_TIMEOUT);
+
     let app = http_router(
         Arc::clone(&dbs),
         frontend_url.as_deref(),
@@ -83,6 +95,7 @@ async fn run() -> anyhow::Result<()> {
         dev_skip_auth,
         workout_generator_grpc_addr,
         allowed_user_ids,
+        grpc_timeout,
     );
     let listener = TcpListener::bind(addr)
         .await

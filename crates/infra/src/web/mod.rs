@@ -104,6 +104,8 @@ pub struct InnerState {
     /// When `Some`, only the listed Telegram user IDs may access the API.
     /// When `None`, every authenticated user is allowed.
     pub allowed_user_ids: Option<Vec<i64>>,
+    /// Timeout for gRPC requests to the workout generation service.
+    pub grpc_timeout: std::time::Duration,
 }
 
 pub type AppState = Arc<InnerState>;
@@ -115,6 +117,7 @@ pub fn router(
     dev_skip_auth: bool,
     workout_generator_grpc_addr: String,
     allowed_user_ids: Option<Vec<i64>>,
+    grpc_timeout: std::time::Duration,
 ) -> Router<()> {
     let state: AppState = Arc::new(InnerState {
         databases: dbs,
@@ -122,6 +125,7 @@ pub fn router(
         dev_skip_auth,
         workout_generator_grpc_addr,
         allowed_user_ids,
+        grpc_timeout,
     });
 
     Router::new()
@@ -142,6 +146,7 @@ pub fn http_router(
     dev_skip_auth: bool,
     workout_generator_grpc_addr: String,
     allowed_user_ids: Option<Vec<i64>>,
+    grpc_timeout: std::time::Duration,
 ) -> Router<()> {
     let api = router(
         dbs,
@@ -149,6 +154,7 @@ pub fn http_router(
         dev_skip_auth,
         workout_generator_grpc_addr,
         allowed_user_ids,
+        grpc_timeout,
     );
     let dist = Path::new("web/dist");
 

@@ -229,6 +229,14 @@ async fn create_workout(
     Ok((StatusCode::CREATED, Json(workout.into())))
 }
 
+#[instrument(
+    skip(state, user, body),
+    fields(
+        user_id = user.0.as_i64(),
+        muscle_group_count = body.muscle_groups.len(),
+        max_exercise_count = body.max_exercise_count
+    )
+)]
 async fn generate_workout_ai(
     user: AuthUser,
     State(state): State<AppState>,
@@ -270,10 +278,13 @@ async fn generate_workout_ai(
         max_exercise_count,
     };
 
-    let generated =
-        crate::grpc::request_generated_workout(&state.workout_generator_grpc_addr, grpc_request)
-            .await
-            .map_err(ApiError::internal)?;
+    let generated = crate::grpc::request_generated_workout(
+        &state.workout_generator_grpc_addr,
+        state.grpc_timeout,
+        grpc_request,
+    )
+    .await
+    .map_err(ApiError::internal)?;
 
     let entries = generated
         .exercises
