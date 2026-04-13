@@ -102,7 +102,7 @@ async fn run() -> anyhow::Result<()> {
         .with_context(|| format!("bind {addr}"))?;
 
     tracing::info!(%addr, "HTTP server listening (API + static UI when web/dist exists)");
-    tracing::info!(%grpc_addr, "gRPC server listening (WorkoutDataService)");
+    tracing::info!(%grpc_addr, "gRPC server listening (WorkoutDataService, HealthDataService)");
 
     let http_server = async move { axum::serve(listener, app).await.context("HTTP server") };
     let grpc_server = grpc::serve_workout_data(grpc_addr, dbs);

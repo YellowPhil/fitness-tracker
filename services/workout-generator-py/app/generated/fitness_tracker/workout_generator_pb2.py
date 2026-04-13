@@ -22,7 +22,7 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
-from . import common_pb2 as fitness__tracker_dot_common__pb2
+from fitness_tracker import common_pb2 as fitness__tracker_dot_common__pb2
 
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\'fitness_tracker/workout_generator.proto\x12!fitness_tracker.workout_generator\x1a\x1c\x66itness_tracker/common.proto\"\x8f\x01\n\x16GenerateWorkoutRequest\x12\x0f\n\x07user_id\x18\x01 \x01(\x03\x12\x0c\n\x04\x64\x61te\x18\x02 \x01(\t\x12:\n\rmuscle_groups\x18\x03 \x03(\x0e\x32#.fitness_tracker.common.MuscleGroup\x12\x1a\n\x12max_exercise_count\x18\x04 \x01(\x05\"B\n\x0cGeneratedSet\x12\x0c\n\x04reps\x18\x01 \x01(\x05\x12\x16\n\tweight_kg\x18\x02 \x01(\x01H\x00\x88\x01\x01\x42\x0c\n\n_weight_kg\"\x9c\x01\n\x11GeneratedExercise\x12\x13\n\x0b\x65xercise_id\x18\x01 \x01(\t\x12\x15\n\rexercise_name\x18\x02 \x01(\t\x12\x12\n\x05notes\x18\x03 \x01(\tH\x00\x88\x01\x01\x12=\n\x04sets\x18\x04 \x03(\x0b\x32/.fitness_tracker.workout_generator.GeneratedSetB\x08\n\x06_notes\"\x8e\x01\n\x17GenerateWorkoutResponse\x12\x19\n\x0cworkout_name\x18\x01 \x01(\tH\x00\x88\x01\x01\x12G\n\texercises\x18\x02 \x03(\x0b\x32\x34.fitness_tracker.workout_generator.GeneratedExerciseB\x0f\n\r_workout_name2\xa4\x01\n\x17WorkoutGeneratorService\x12\x88\x01\n\x0fGenerateWorkout\x12\x39.fitness_tracker.workout_generator.GenerateWorkoutRequest\x1a:.fitness_tracker.workout_generator.GenerateWorkoutResponseb\x06proto3')

@@ -2,6 +2,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proto_dir = "proto";
     let files = [
         "proto/fitness_tracker/common.proto",
+        "proto/fitness_tracker/health_data.proto",
         "proto/fitness_tracker/workout_data.proto",
         "proto/fitness_tracker/workout_generator.proto",
     ];

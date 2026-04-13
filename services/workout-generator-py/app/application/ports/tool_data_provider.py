@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from app.domain.models import ExerciseCatalogItem
+from app.domain.models import ExerciseCatalogItem, HealthProfileAttribute
 
 
 class ToolDataProvider(Protocol):
+    async def load_health_profile(self, user_id: int) -> list[HealthProfileAttribute]:
+        """Returns the latest user health profile attributes for prompt context."""
+        ...
+
     async def load_exercises_for_muscle_groups(
         self,
         user_id: int,

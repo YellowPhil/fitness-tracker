@@ -1,3 +1,4 @@
+mod health_data_service;
 mod workout_data_service;
 
 use std::net::SocketAddr;
@@ -5,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
+use fitness_tracker_proto::health_data::health_data_service_server::HealthDataServiceServer;
 use fitness_tracker_proto::workout_data::workout_data_service_server::WorkoutDataServiceServer;
 use fitness_tracker_proto::workout_generator::workout_generator_service_client::WorkoutGeneratorServiceClient;
 use fitness_tracker_proto::workout_generator::{GenerateWorkoutRequest, GenerateWorkoutResponse};
@@ -15,10 +17,13 @@ use uuid::Uuid;
 use crate::web::Databases;
 
 pub async fn serve_workout_data(addr: SocketAddr, databases: Arc<Databases>) -> anyhow::Result<()> {
-    let service = workout_data_service::WorkoutDataGrpcService::new(databases);
+    let workout_data_service =
+        workout_data_service::WorkoutDataGrpcService::new(Arc::clone(&databases));
+    let health_data_service = health_data_service::HealthDataGrpcService::new(databases);
 
     Server::builder()
-        .add_service(WorkoutDataServiceServer::new(service))
+        .add_service(WorkoutDataServiceServer::new(workout_data_service))
+        .add_service(HealthDataServiceServer::new(health_data_service))
         .serve(addr)
         .await
         .with_context(|| format!("gRPC server on {addr}"))

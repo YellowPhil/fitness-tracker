@@ -22,7 +22,7 @@ _runtime_version.ValidateProtobufRuntimeVersion(
 _sym_db = _symbol_database.Default()
 
 
-from . import common_pb2 as fitness__tracker_dot_common__pb2
+from fitness_tracker import common_pb2 as fitness__tracker_dot_common__pb2
 
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\"fitness_tracker/workout_data.proto\x12\x1c\x66itness_tracker.workout_data\x1a\x1c\x66itness_tracker/common.proto\"h\n\x19GetExerciseCatalogRequest\x12\x0f\n\x07user_id\x18\x01 \x01(\x03\x12:\n\rmuscle_groups\x18\x02 \x03(\x0e\x32#.fitness_tracker.common.MuscleGroup\"\\\n\x1aGetExerciseCatalogResponse\x12>\n\texercises\x18\x01 \x03(\x0b\x32+.fitness_tracker.common.ExerciseCatalogItem\"\x9e\x01\n\x14QueryWorkoutsRequest\x12\x0f\n\x07user_id\x18\x01 \x01(\x03\x12\x39\n\x0cmuscle_group\x18\x02 \x01(\x0e\x32#.fitness_tracker.common.MuscleGroup\x12\x11\n\x04\x64\x61te\x18\x03 \x01(\tH\x00\x88\x01\x01\x12\x13\n\x06last_n\x18\x04 \x01(\x05H\x01\x88\x01\x01\x42\x07\n\x05_dateB\t\n\x07_last_n\"(\n\x15QueryWorkoutsResponse\x12\x0f\n\x07\x63ontent\x18\x01 \x01(\t\"b\n\x14ListExercisesRequest\x12\x0f\n\x07user_id\x18\x01 \x01(\x03\x12\x39\n\x0cmuscle_group\x18\x02 \x01(\x0e\x32#.fitness_tracker.common.MuscleGroup\"(\n\x15ListExercisesResponse\x12\x0f\n\x07\x63ontent\x18\x01 \x01(\t2\x92\x03\n\x12WorkoutDataService\x12\x87\x01\n\x12GetExerciseCatalog\x12\x37.fitness_tracker.workout_data.GetExerciseCatalogRequest\x1a\x38.fitness_tracker.workout_data.GetExerciseCatalogResponse\x12x\n\rQueryWorkouts\x12\x32.fitness_tracker.workout_data.QueryWorkoutsRequest\x1a\x33.fitness_tracker.workout_data.QueryWorkoutsResponse\x12x\n\rListExercises\x12\x32.fitness_tracker.workout_data.ListExercisesRequest\x1a\x33.fitness_tracker.workout_data.ListExercisesResponseb\x06proto3')

@@ -57,6 +57,12 @@ class WorkoutGenerationService:
         )
         self._validate_command(command)
 
+        health_profile = await self._provider.load_health_profile(command.user_id)
+        logger.debug(
+            "health_profile_loaded",
+            count=len(health_profile),
+        )
+
         loaded_exercises = await self._provider.load_exercises_for_muscle_groups(
             user_id=command.user_id,
             muscle_groups=command.muscle_groups,
@@ -77,6 +83,7 @@ class WorkoutGenerationService:
         user_prompt = build_user_prompt_content(
             workout_date=command.date,
             muscle_groups=command.muscle_groups,
+            health_profile=health_profile,
             exercises=loaded_exercises,
             exercise_names=sorted_names,
             max_exercise_count=command.max_exercise_count,

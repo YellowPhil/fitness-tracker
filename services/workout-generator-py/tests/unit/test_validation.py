@@ -15,6 +15,9 @@ class FakeAiClient:
 
 
 class FakeProvider:
+    async def load_health_profile(self, user_id: int):
+        return []
+
     async def load_exercises_for_muscle_groups(self, user_id: int, muscle_groups: list[str]):
         return [
             ExerciseCatalogItem(

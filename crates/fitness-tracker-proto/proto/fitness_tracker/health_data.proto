@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package fitness_tracker.health_data;
+
+service HealthDataService {
+  rpc GetCurrentHealthProfile(GetCurrentHealthProfileRequest) returns (GetCurrentHealthProfileResponse);
+}
+
+message GetCurrentHealthProfileRequest {
+  int64 user_id = 1;
+}
+
+message HealthAttribute {
+  string key = 1;
+  string value = 2;
+  optional string unit = 3;
+}
+
+message GetCurrentHealthProfileResponse {
+  repeated HealthAttribute attributes = 1;
+}

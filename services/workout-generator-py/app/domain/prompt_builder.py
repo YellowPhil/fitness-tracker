@@ -2,17 +2,23 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.domain.models import ExerciseCatalogItem, ExerciseKind
+from app.domain.models import ExerciseCatalogItem, ExerciseKind, HealthProfileAttribute
 
 
 def build_user_prompt_content(
     workout_date: date,
     muscle_groups: list[str],
+    health_profile: list[HealthProfileAttribute],
     exercises: list[ExerciseCatalogItem],
     exercise_names: list[str],
     max_exercise_count: int,
 ) -> str:
     groups = ", ".join(muscle_groups)
+    profile_lines = [
+        f"- {item.key}: {item.value}{f' {item.unit}' if item.unit else ''}"
+        for item in health_profile
+    ]
+    profile_section = "\n".join(profile_lines) if profile_lines else "- unavailable"
 
     weighted_names = sorted(
         e.name for e in exercises if e.kind == ExerciseKind.WEIGHTED
@@ -43,6 +49,8 @@ def build_user_prompt_content(
         f"Target workout date: {workout_date.isoformat()}\n"
         f"Muscle groups: {groups}\n"
         f"Maximum number of exercises (hard cap): {max_exercise_count}\n\n"
+        "Current health profile parameters (use this context when choosing exercise volume and loads):\n"
+        f"{profile_section}\n\n"
         f"{weighted_section}"
         f"{bodyweight_section}"
         "Allowed exercise names (use ONLY these exact strings in your final JSON output):\n"

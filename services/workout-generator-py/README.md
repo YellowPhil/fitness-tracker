@@ -31,6 +31,7 @@ python -m grpc_tools.protoc \
   --python_out="app/generated" \
   --grpc_python_out="app/generated" \
   "../../crates/fitness-tracker-proto/proto/fitness_tracker/common.proto" \
+  "../../crates/fitness-tracker-proto/proto/fitness_tracker/health_data.proto" \
   "../../crates/fitness-tracker-proto/proto/fitness_tracker/workout_data.proto" \
   "../../crates/fitness-tracker-proto/proto/fitness_tracker/workout_generator.proto"
 ```

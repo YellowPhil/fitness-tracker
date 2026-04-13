@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from . import workout_data_pb2 as fitness__tracker_dot_workout__data__pb2
+from fitness_tracker import workout_data_pb2 as fitness__tracker_dot_workout__data__pb2
 
 GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__

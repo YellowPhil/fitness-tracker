@@ -20,6 +20,14 @@ class ExerciseCatalogItem(BaseModel):
     muscle_group: str
 
 
+class HealthProfileAttribute(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    value: str
+    unit: str | None
+
+
 class WorkoutSet(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

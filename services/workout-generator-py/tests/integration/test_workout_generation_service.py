@@ -5,7 +5,12 @@ import pytest
 from app.application.ports.ai_client import CompletionRequest, CompletionResponse, ToolCall
 from app.application.services.tool_dispatcher import ToolDispatcher
 from app.application.services.workout_generation_service import WorkoutGenerationService
-from app.domain.models import ExerciseCatalogItem, ExerciseKind, GenerateWorkoutCommand
+from app.domain.models import (
+    ExerciseCatalogItem,
+    ExerciseKind,
+    GenerateWorkoutCommand,
+    HealthProfileAttribute,
+)
 from app.infrastructure.tooling.registry import build_tool_registry
 
 
@@ -46,6 +51,13 @@ class FakeAiClient:
 
 
 class FakeProvider:
+    async def load_health_profile(self, user_id: int):
+        return [
+            HealthProfileAttribute(key="weight", value="82", unit="kg"),
+            HealthProfileAttribute(key="height", value="180", unit="cm"),
+            HealthProfileAttribute(key="age", value="31", unit=None),
+        ]
+
     async def load_exercises_for_muscle_groups(self, user_id: int, muscle_groups: list[str]):
         return [
             ExerciseCatalogItem(
@@ -90,4 +102,8 @@ async def test_generate_workout_two_step_flow() -> None:
     assert result.exercises[0].exercise_id == "exercise-11"
     assert len(fake_ai.requests) == 2
     assert fake_ai.requests[0].require_tool_choice is True
+    initial_prompt = fake_ai.requests[0].messages[1].content
+    assert initial_prompt is not None
+    assert "Current health profile parameters" in initial_prompt
+    assert "- weight: 82 kg" in initial_prompt
     assert fake_ai.requests[1].response_schema is not None
