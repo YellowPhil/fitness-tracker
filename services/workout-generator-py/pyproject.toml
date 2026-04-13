@@ -27,7 +27,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*"]
+include = ["app*", "fitness_tracker*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

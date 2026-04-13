@@ -1,5 +1,6 @@
 .venv/
 .pytest_cache/
+fitness_tracker/
 __pycache__/
 *.pyc
 *.pyo

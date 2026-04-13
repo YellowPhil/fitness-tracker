@@ -15,6 +15,7 @@ RUN apt-get update \
 
 COPY pyproject.toml README.md ./
 COPY app ./app
+COPY fitness_tracker ./fitness_tracker
 
 RUN pip install --upgrade pip setuptools wheel \
     && pip install .
