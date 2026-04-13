@@ -2,6 +2,7 @@ use time::Date;
 
 use crate::{
     health::HealthParams,
+    preferences::WorkoutPreferences,
     types::{
         Exercise, ExerciseId, ExerciseMetadata, MuscleGroup, PerformedSet, Workout,
         WorkoutExercise, WorkoutId,
@@ -96,4 +97,12 @@ pub trait HealthRepo {
 
     async fn get_health(&self) -> Result<HealthParams, Self::RepoError>;
     async fn save(&self, params: &HealthParams) -> Result<(), Self::RepoError>;
+}
+
+#[async_trait::async_trait]
+pub trait PreferencesRepo {
+    type RepoError: std::error::Error + Send + Sync;
+
+    async fn get_preferences(&self) -> Result<WorkoutPreferences, Self::RepoError>;
+    async fn save(&self, preferences: &WorkoutPreferences) -> Result<(), Self::RepoError>;
 }

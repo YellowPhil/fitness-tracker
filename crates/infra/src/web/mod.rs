@@ -1,4 +1,5 @@
 pub mod excercise;
+pub mod preferences;
 pub mod profile;
 pub mod telegram_auth;
 pub mod types;
@@ -21,12 +22,13 @@ use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, instrument, warn};
 
-use crate::{PostgresExcerciseDb, PostgresHealthDb, PostgresWorkoutDb};
+use crate::{PostgresExcerciseDb, PostgresHealthDb, PostgresPreferencesDb, PostgresWorkoutDb};
 
 pub struct Databases {
     pub exercise_db: PostgresExcerciseDb,
     pub workout_db: PostgresWorkoutDb,
     pub health_db: PostgresHealthDb,
+    pub preferences_db: PostgresPreferencesDb,
 }
 pub enum ApiError {
     Unauthorized,
@@ -57,11 +59,13 @@ impl Databases {
         exercise_db: PostgresExcerciseDb,
         workout_db: PostgresWorkoutDb,
         health_db: PostgresHealthDb,
+        preferences_db: PostgresPreferencesDb,
     ) -> Self {
         Self {
             exercise_db,
             workout_db,
             health_db,
+            preferences_db,
         }
     }
 
@@ -73,7 +77,8 @@ impl Databases {
         Ok(Self::new(
             PostgresExcerciseDb::new(pool.clone()),
             PostgresWorkoutDb::new(pool.clone()),
-            PostgresHealthDb::new(pool),
+            PostgresHealthDb::new(pool.clone()),
+            PostgresPreferencesDb::new(pool),
         ))
     }
 
@@ -89,6 +94,13 @@ impl Databases {
 
     pub fn health_app(&self, user_id: UserId) -> application::HealthApp<crate::PostgresHealthRepo> {
         application::HealthApp::new(self.health_db.for_user(user_id))
+    }
+
+    pub fn preferences_app(
+        &self,
+        user_id: UserId,
+    ) -> application::PreferencesApp<crate::PostgresPreferencesRepo> {
+        application::PreferencesApp::new(self.preferences_db.for_user(user_id))
     }
 }
 
@@ -132,6 +144,7 @@ pub fn router(
         .nest("/api/exercises", excercise::routes())
         .nest("/api/workouts", workout::routes())
         .nest("/api/profile", profile::routes())
+        .nest("/api/preferences", preferences::routes())
         .with_state(state)
 }
 

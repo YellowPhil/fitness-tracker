@@ -6,7 +6,12 @@ from app.application.errors import RequestValidationError
 from app.application.ports.ai_client import CompletionResponse
 from app.application.services.tool_dispatcher import ToolDispatcher, ToolRegistry
 from app.application.services.workout_generation_service import WorkoutGenerationService
-from app.domain.models import ExerciseCatalogItem, ExerciseKind, GenerateWorkoutCommand
+from app.domain.models import (
+    ExerciseCatalogItem,
+    ExerciseKind,
+    GenerateWorkoutCommand,
+    WorkoutGenerationPreferences,
+)
 
 
 class FakeAiClient:
@@ -27,6 +32,9 @@ class FakeProvider:
                 muscle_group="Chest",
             )
         ]
+
+    async def load_workout_preferences(self, user_id: int):
+        return WorkoutGenerationPreferences()
 
     async def query_workouts(self, user_id: int, arguments_json: str):
         return "ok"

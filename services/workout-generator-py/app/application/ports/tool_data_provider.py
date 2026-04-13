@@ -2,12 +2,23 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from app.domain.models import ExerciseCatalogItem, HealthProfileAttribute
+from app.domain.models import (
+    ExerciseCatalogItem,
+    HealthProfileAttribute,
+    WorkoutGenerationPreferences,
+)
 
 
 class ToolDataProvider(Protocol):
     async def load_health_profile(self, user_id: int) -> list[HealthProfileAttribute]:
         """Returns the latest user health profile attributes for prompt context."""
+        ...
+
+    async def load_workout_preferences(
+        self,
+        user_id: int,
+    ) -> WorkoutGenerationPreferences:
+        """Returns optional workout generation preferences for prompt context."""
         ...
 
     async def load_exercises_for_muscle_groups(

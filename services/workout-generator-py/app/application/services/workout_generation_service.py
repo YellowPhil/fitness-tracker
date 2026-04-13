@@ -63,6 +63,20 @@ class WorkoutGenerationService:
             count=len(health_profile),
         )
 
+        workout_preferences = await self._provider.load_workout_preferences(command.user_id)
+        logger.debug(
+            "workout_preferences_loaded",
+            has_any=any(
+                [
+                    workout_preferences.max_sets_per_exercise is not None,
+                    workout_preferences.preferred_split is not None,
+                    workout_preferences.training_goal is not None,
+                    workout_preferences.session_duration_minutes is not None,
+                    bool(workout_preferences.notes),
+                ]
+            ),
+        )
+
         loaded_exercises = await self._provider.load_exercises_for_muscle_groups(
             user_id=command.user_id,
             muscle_groups=command.muscle_groups,
@@ -84,6 +98,7 @@ class WorkoutGenerationService:
             workout_date=command.date,
             muscle_groups=command.muscle_groups,
             health_profile=health_profile,
+            workout_preferences=workout_preferences,
             exercises=loaded_exercises,
             exercise_names=sorted_names,
             max_exercise_count=command.max_exercise_count,

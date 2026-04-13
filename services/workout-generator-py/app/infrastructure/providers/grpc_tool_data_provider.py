@@ -6,7 +6,14 @@ import grpc
 
 from app.application.errors import ProviderResponseError, ProviderUnavailableError
 from app.application.ports.tool_data_provider import ToolDataProvider
-from app.domain.models import ExerciseCatalogItem, HealthProfileAttribute
+from app.domain.models import (
+    ExerciseKind,
+    ExerciseCatalogItem,
+    HealthProfileAttribute,
+    TrainingGoalPreference,
+    WorkoutGenerationPreferences,
+    WorkoutSplitPreference,
+)
 from app.infrastructure.config import Settings
 import fitness_tracker.common_pb2 as common_pb2
 import fitness_tracker.health_data_pb2 as health_data_pb2
@@ -43,6 +50,36 @@ class GrpcToolDataProvider(ToolDataProvider):
             )
             for item in response.attributes
         ]
+
+    async def load_workout_preferences(
+        self,
+        user_id: int,
+    ) -> WorkoutGenerationPreferences:
+        request = health_data_pb2.GetWorkoutPreferencesRequest(user_id=user_id)
+        try:
+            response = await self._health_data_client.GetWorkoutPreferences(
+                request, timeout=self._timeout_seconds
+            )
+        except grpc.RpcError as exc:
+            raise map_grpc_error(exc) from exc
+
+        by_key: dict[str, str] = {}
+        for item in response.attributes:
+            by_key[item.key] = item.value
+
+        return WorkoutGenerationPreferences(
+            max_sets_per_exercise=parse_optional_int(
+                by_key.get("max_sets_per_exercise"),
+                field_name="max_sets_per_exercise",
+            ),
+            preferred_split=parse_optional_split(by_key.get("preferred_split")),
+            training_goal=parse_optional_training_goal(by_key.get("training_goal")),
+            session_duration_minutes=parse_optional_int(
+                by_key.get("session_duration_minutes"),
+                field_name="session_duration_minutes",
+            ),
+            notes=by_key.get("notes"),
+        )
 
     async def load_exercises_for_muscle_groups(
         self,
@@ -164,9 +201,52 @@ def muscle_group_from_proto(value: int) -> str:
     return mapping[value]
 
 
-def exercise_kind_from_proto(value: int) -> str:
+def exercise_kind_from_proto(value: int) -> ExerciseKind:
     if value == common_pb2.WEIGHTED:
-        return "Weighted"
+        return ExerciseKind.WEIGHTED
     if value == common_pb2.BODY_WEIGHT:
-        return "BodyWeight"
+        return ExerciseKind.BODYWEIGHT
     raise ProviderResponseError(f"Unknown exercise kind value: {value}")
+
+
+def parse_optional_int(value: str | None, field_name: str) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ProviderResponseError(
+            f"Internal provider returned invalid integer for {field_name}: {value}"
+        ) from exc
+
+
+def parse_optional_split(value: str | None) -> WorkoutSplitPreference | None:
+    if value is None:
+        return None
+    normalized = normalize_preference_value(value)
+    mapping = {
+        "fullbody": WorkoutSplitPreference.FULL_BODY,
+        "pushpulllegs": WorkoutSplitPreference.PUSH_PULL_LEGS,
+        "upperlower": WorkoutSplitPreference.UPPER_LOWER,
+    }
+    if normalized not in mapping:
+        raise ProviderResponseError(f"Unknown preferred_split value: {value}")
+    return mapping[normalized]
+
+
+def parse_optional_training_goal(value: str | None) -> TrainingGoalPreference | None:
+    if value is None:
+        return None
+    normalized = normalize_preference_value(value)
+    mapping = {
+        "strength": TrainingGoalPreference.STRENGTH,
+        "hypertrophy": TrainingGoalPreference.HYPERTROPHY,
+        "endurance": TrainingGoalPreference.ENDURANCE,
+    }
+    if normalized not in mapping:
+        raise ProviderResponseError(f"Unknown training_goal value: {value}")
+    return mapping[normalized]
+
+
+def normalize_preference_value(value: str) -> str:
+    return "".join(ch.lower() for ch in value if ch not in {"_", "-", " "})

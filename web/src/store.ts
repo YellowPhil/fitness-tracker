@@ -9,6 +9,7 @@ import type {
   UserProfile,
   WeightUnits,
   Workout,
+  WorkoutPreferences,
 } from "./types";
 import { toDateString } from "./utils";
 
@@ -26,6 +27,8 @@ interface GymStore {
 
   profile: UserProfile | null;
   profileLoading: boolean;
+  preferences: WorkoutPreferences | null;
+  preferencesLoading: boolean;
 
   syncError: string | null;
   isLoading: boolean;
@@ -76,6 +79,8 @@ interface GymStore {
   refreshProfile: () => Promise<void>;
   updateProfile: (profile: UserProfile) => Promise<void>;
   updateWeight: (value: number, units: WeightUnits) => Promise<void>;
+  refreshPreferences: () => Promise<void>;
+  updatePreferences: (preferences: WorkoutPreferences) => Promise<void>;
 }
 
 async function afterWorkoutMutation(get: () => GymStore) {
@@ -99,6 +104,8 @@ export const useStore = create<GymStore>()(
 
       profile: null,
       profileLoading: false,
+      preferences: null,
+      preferencesLoading: false,
 
       syncError: null,
       isLoading: true,
@@ -340,6 +347,30 @@ export const useStore = create<GymStore>()(
         try {
           const updated = await api.updateWeight(value, units);
           set({ profile: updated });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+          throw e;
+        }
+      },
+
+      refreshPreferences: async () => {
+        set({ preferencesLoading: true });
+        try {
+          const preferences = await api.getPreferences();
+          set({ preferences });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          set({ syncError: msg });
+        } finally {
+          set({ preferencesLoading: false });
+        }
+      },
+
+      updatePreferences: async (preferences) => {
+        try {
+          const updated = await api.updatePreferences(preferences);
+          set({ preferences: updated });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           set({ syncError: msg });

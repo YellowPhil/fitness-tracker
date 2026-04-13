@@ -5,10 +5,13 @@ import type {
   HeightUnits,
   MuscleGroup,
   PerformedSet,
+  TrainingGoal,
   UserProfile,
   WeightUnits,
   Workout,
   WorkoutExercise,
+  WorkoutPreferences,
+  WorkoutSplit,
   WorkoutSource,
 } from "./types";
 import { WORKOUT_SOURCE_API } from "./types";
@@ -425,4 +428,81 @@ export async function updateWeight(
     body: JSON.stringify({ value, units }),
   });
   return mapProfileFromApi(p);
+}
+
+interface ApiWorkoutPreferences {
+  max_sets_per_exercise?: number | null;
+  preferred_split?: string | null;
+  training_goal?: string | null;
+  session_duration_minutes?: number | null;
+  notes?: string | null;
+}
+
+function normalizePreferenceToken(value: string): string {
+  return value.replace(/[\s_-]/g, "").toLowerCase();
+}
+
+function mapWorkoutSplit(value: string | null | undefined): WorkoutSplit | undefined {
+  if (!value) return undefined;
+  switch (normalizePreferenceToken(value)) {
+    case "fullbody":
+      return "FullBody";
+    case "pushpulllegs":
+    case "ppl":
+      return "PushPullLegs";
+    case "upperlower":
+      return "UpperLower";
+    default:
+      return undefined;
+  }
+}
+
+function mapTrainingGoal(value: string | null | undefined): TrainingGoal | undefined {
+  if (!value) return undefined;
+  switch (normalizePreferenceToken(value)) {
+    case "strength":
+      return "Strength";
+    case "hypertrophy":
+    case "musclegain":
+      return "Hypertrophy";
+    case "endurance":
+      return "Endurance";
+    default:
+      return undefined;
+  }
+}
+
+function mapPreferencesFromApi(p: ApiWorkoutPreferences): WorkoutPreferences {
+  return {
+    maxSetsPerExercise: p.max_sets_per_exercise ?? undefined,
+    preferredSplit: mapWorkoutSplit(p.preferred_split),
+    trainingGoal: mapTrainingGoal(p.training_goal),
+    sessionDurationMinutes: p.session_duration_minutes ?? undefined,
+    notes: p.notes ?? undefined,
+  };
+}
+
+function mapPreferencesToApi(preferences: WorkoutPreferences): ApiWorkoutPreferences {
+  return {
+    max_sets_per_exercise: preferences.maxSetsPerExercise ?? null,
+    preferred_split: preferences.preferredSplit ?? null,
+    training_goal: preferences.trainingGoal ?? null,
+    session_duration_minutes: preferences.sessionDurationMinutes ?? null,
+    notes: preferences.notes ?? null,
+  };
+}
+
+export async function getPreferences(): Promise<WorkoutPreferences> {
+  const preferences = await apiFetch<ApiWorkoutPreferences>("/api/preferences");
+  return mapPreferencesFromApi(preferences);
+}
+
+export async function updatePreferences(
+  preferences: WorkoutPreferences,
+): Promise<WorkoutPreferences> {
+  const updated = await apiFetch<ApiWorkoutPreferences>("/api/preferences", {
+    method: "PUT",
+    body: JSON.stringify(mapPreferencesToApi(preferences)),
+  });
+  return mapPreferencesFromApi(updated);
 }

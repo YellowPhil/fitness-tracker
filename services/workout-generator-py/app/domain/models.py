@@ -28,6 +28,28 @@ class HealthProfileAttribute(BaseModel):
     unit: str | None
 
 
+class WorkoutSplitPreference(StrEnum):
+    FULL_BODY = "FullBody"
+    PUSH_PULL_LEGS = "PushPullLegs"
+    UPPER_LOWER = "UpperLower"
+
+
+class TrainingGoalPreference(StrEnum):
+    STRENGTH = "Strength"
+    HYPERTROPHY = "Hypertrophy"
+    ENDURANCE = "Endurance"
+
+
+class WorkoutGenerationPreferences(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_sets_per_exercise: int | None = None
+    preferred_split: WorkoutSplitPreference | None = None
+    training_goal: TrainingGoalPreference | None = None
+    session_duration_minutes: int | None = None
+    notes: str | None = None
+
+
 class WorkoutSet(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

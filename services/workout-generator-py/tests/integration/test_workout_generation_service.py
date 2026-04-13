@@ -10,6 +10,9 @@ from app.domain.models import (
     ExerciseKind,
     GenerateWorkoutCommand,
     HealthProfileAttribute,
+    TrainingGoalPreference,
+    WorkoutGenerationPreferences,
+    WorkoutSplitPreference,
 )
 from app.infrastructure.tooling.registry import build_tool_registry
 
@@ -68,6 +71,15 @@ class FakeProvider:
             )
         ]
 
+    async def load_workout_preferences(self, user_id: int):
+        return WorkoutGenerationPreferences(
+            max_sets_per_exercise=4,
+            preferred_split=WorkoutSplitPreference.PUSH_PULL_LEGS,
+            training_goal=TrainingGoalPreference.HYPERTROPHY,
+            session_duration_minutes=75,
+            notes="Avoid exercises that require a spotter",
+        )
+
     async def query_workouts(self, user_id: int, arguments_json: str):
         return "Previous bench sessions available"
 
@@ -105,5 +117,7 @@ async def test_generate_workout_two_step_flow() -> None:
     initial_prompt = fake_ai.requests[0].messages[1].content
     assert initial_prompt is not None
     assert "Current health profile parameters" in initial_prompt
+    assert "Current workout generation preferences (respect these when possible):" in initial_prompt
+    assert "- preferred_split: PushPullLegs" in initial_prompt
     assert "- weight: 82 kg" in initial_prompt
     assert fake_ai.requests[1].response_schema is not None

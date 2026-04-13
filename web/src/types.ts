@@ -65,6 +65,24 @@ export interface Workout {
 
 export type HeightUnits = "cm" | "in";
 
+export type WorkoutSplit =
+  | "FullBody"
+  | "PushPullLegs"
+  | "UpperLower";
+
+export type TrainingGoal =
+  | "Strength"
+  | "Hypertrophy"
+  | "Endurance";
+
+export interface WorkoutPreferences {
+  maxSetsPerExercise?: number;
+  preferredSplit?: WorkoutSplit;
+  trainingGoal?: TrainingGoal;
+  sessionDurationMinutes?: number;
+  notes?: string;
+}
+
 export interface UserProfile {
   weight: Weight;
   height: { value: number; units: HeightUnits };

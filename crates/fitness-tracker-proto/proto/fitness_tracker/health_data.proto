@@ -4,6 +4,7 @@ package fitness_tracker.health_data;
 
 service HealthDataService {
   rpc GetCurrentHealthProfile(GetCurrentHealthProfileRequest) returns (GetCurrentHealthProfileResponse);
+  rpc GetWorkoutPreferences(GetWorkoutPreferencesRequest) returns (GetWorkoutPreferencesResponse);
 }
 
 message GetCurrentHealthProfileRequest {
@@ -18,4 +19,17 @@ message HealthAttribute {
 
 message GetCurrentHealthProfileResponse {
   repeated HealthAttribute attributes = 1;
+}
+
+message GetWorkoutPreferencesRequest {
+  int64 user_id = 1;
+}
+
+message PreferenceAttribute {
+  string key = 1;
+  string value = 2;
+}
+
+message GetWorkoutPreferencesResponse {
+  repeated PreferenceAttribute attributes = 1;
 }

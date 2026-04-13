@@ -145,6 +145,17 @@ async fn init_schema(pool: &Pool<Postgres>) -> Result<(), sqlx::Error> {
             height_units height_unit NOT NULL,
             age INTEGER NOT NULL CHECK (age >= 0)
         );
+
+        CREATE TABLE IF NOT EXISTS workout_preferences (
+            user_id BIGINT PRIMARY KEY,
+            max_sets_per_exercise SMALLINT,
+            preferred_split TEXT,
+            training_goal TEXT,
+            session_duration_minutes INTEGER,
+            notes TEXT,
+            CHECK (max_sets_per_exercise IS NULL OR max_sets_per_exercise >= 0),
+            CHECK (session_duration_minutes IS NULL OR session_duration_minutes >= 0)
+        );
         ",
     )
     .execute(pool)
