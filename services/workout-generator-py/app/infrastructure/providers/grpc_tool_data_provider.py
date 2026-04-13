@@ -7,14 +7,14 @@ import grpc
 from app.application.errors import ProviderResponseError, ProviderUnavailableError
 from app.application.ports.tool_data_provider import ToolDataProvider
 from app.domain.models import ExerciseCatalogItem, HealthProfileAttribute
-from app.generated.fitness_tracker import (
+from app.infrastructure.config import Settings
+from fitness_tracker import (
     common_pb2,
     health_data_pb2,
     health_data_pb2_grpc,
     workout_data_pb2,
     workout_data_pb2_grpc,
 )
-from app.infrastructure.config import Settings
 
 
 class GrpcToolDataProvider(ToolDataProvider):

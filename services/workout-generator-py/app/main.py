@@ -10,9 +10,9 @@ import grpc_health.v1.health_pb2_grpc
 import structlog
 
 from app.dependencies import get_generation_service, get_provider, get_settings
-from app.generated.fitness_tracker import workout_generator_pb2_grpc
 from app.infrastructure.grpc.workout_generator_service import WorkoutGeneratorGrpcService
 from app.infrastructure.logging import configure_logging
+from fitness_tracker import workout_generator_pb2_grpc
 
 configure_logging()
 
