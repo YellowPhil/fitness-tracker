@@ -3,5 +3,6 @@
 .vscode/
 fitness.db
 .env
+generated/
 .envrc
 data/
