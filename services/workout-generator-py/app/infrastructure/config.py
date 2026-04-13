@@ -10,7 +10,6 @@ class Settings(BaseSettings):
     )
 
     app_env: str = Field(default="dev", alias="WG_APP_ENV")
-    app_bind_addr: str = Field(default="0.0.0.0:8091", alias="WG_BIND_ADDR")
     grpc_bind_addr: str = Field(default="0.0.0.0:50052", alias="WG_GRPC_BIND_ADDR")
 
     openai_api_key: str = Field(alias="WG_OPENAI_API_KEY")

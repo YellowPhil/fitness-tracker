@@ -8,6 +8,8 @@ WORKDIR /app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential curl \
+    && curl -L https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/v0.4.38/grpc_health_probe-linux-$(uname -m) -o /usr/local/bin/grpc_health_probe \
+    && chmod +x /usr/local/bin/grpc_health_probe \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md ./
@@ -16,9 +18,9 @@ COPY app ./app
 RUN pip install --upgrade pip setuptools wheel \
     && pip install .
 
-EXPOSE 8091 50052
+EXPOSE 50052
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD curl -sf http://127.0.0.1:8091/health/live -o /dev/null || exit 1
+    CMD grpc_health_probe -addr=127.0.0.1:50052 || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8091"]
+CMD ["python", "-m", "app.main"]

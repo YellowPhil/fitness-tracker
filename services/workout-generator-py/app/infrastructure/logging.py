@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import logging
-import uuid
 
 import structlog
-from fastapi import Request
 
 
 def configure_logging() -> None:
@@ -20,8 +18,3 @@ def configure_logging() -> None:
         cache_logger_on_first_use=True,
     )
     logging.basicConfig(level=logging.INFO)
-
-
-def request_id_from_headers(request: Request) -> str:
-    inbound = request.headers.get("x-request-id")
-    return inbound or str(uuid.uuid4())

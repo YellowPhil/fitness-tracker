@@ -41,7 +41,6 @@ services:
       dockerfile: Dockerfile
     environment:
       - WG_APP_ENV=${WG_APP_ENV:-dev}
-      - WG_BIND_ADDR=${WG_BIND_ADDR:-0.0.0.0:8091}
       - WG_GRPC_BIND_ADDR=${WG_GRPC_BIND_ADDR:-0.0.0.0:50052}
       - WG_OPENAI_API_KEY=${WG_OPENAI_API_KEY:?Set WG_OPENAI_API_KEY}
       - WG_OPENAI_MODEL=${WG_OPENAI_MODEL:-gpt-5-mini}
