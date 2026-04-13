@@ -5,12 +5,6 @@ from datetime import date
 from app.domain.models import ExerciseCatalogItem, ExerciseKind
 
 
-SYSTEM_PROMPT = (
-    "You are an expert workout programmer. Always use the provided tools to gather exercise "
-    "and workout history context before finalizing your plan."
-)
-
-
 def build_user_prompt_content(
     workout_date: date,
     muscle_groups: list[str],
@@ -20,8 +14,12 @@ def build_user_prompt_content(
 ) -> str:
     groups = ", ".join(muscle_groups)
 
-    weighted_names = sorted(e.name for e in exercises if e.kind == ExerciseKind.WEIGHTED)
-    bodyweight_names = sorted(e.name for e in exercises if e.kind == ExerciseKind.BODYWEIGHT)
+    weighted_names = sorted(
+        e.name for e in exercises if e.kind == ExerciseKind.WEIGHTED
+    )
+    bodyweight_names = sorted(
+        e.name for e in exercises if e.kind == ExerciseKind.BODYWEIGHT
+    )
 
     weighted_section = ""
     if weighted_names:

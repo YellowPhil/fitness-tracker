@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+
 import structlog
 from structlog.contextvars import bind_contextvars
 
@@ -10,14 +11,25 @@ from app.application.errors import (
     AiResponseFormatError,
     RequestValidationError,
 )
-from app.application.ports.ai_client import AiChatClient, ChatMessage, CompletionRequest, CompletionResponse
+from app.application.ports.ai_client import (
+    AiChatClient,
+    ChatMessage,
+    CompletionRequest,
+    CompletionResponse,
+)
 from app.application.ports.tool_data_provider import ToolDataProvider
 from app.application.services.tool_dispatcher import ToolDispatcher
 from app.domain.constants import EXERCISE_LIST_TOOL, WORKOUT_QUERY_TOOL
-from app.domain.models import AiWorkoutResponse, ExerciseCatalogItem, GenerateWorkoutCommand, GeneratedWorkout
-from app.domain.prompt_builder import SYSTEM_PROMPT, build_user_prompt_content
+from app.domain.models import (
+    AiWorkoutResponse,
+    ExerciseCatalogItem,
+    GeneratedWorkout,
+    GenerateWorkoutCommand,
+)
+from app.domain.prompt_builder import build_user_prompt_content
 from app.domain.resolver import resolve_workout
 from app.domain.response_schema import workout_response_schema
+from app.domain.system_prompt import SYSTEM_PROMPT
 from app.domain.tool_specs import build_exercise_list_tool, build_workout_query_tool
 
 logger = structlog.get_logger(__name__)
@@ -55,7 +67,9 @@ class WorkoutGenerationService:
             muscle_groups=command.muscle_groups,
         )
         if not loaded_exercises:
-            raise RequestValidationError("No exercises found for the selected muscle groups")
+            raise RequestValidationError(
+                "No exercises found for the selected muscle groups"
+            )
 
         sorted_names = sorted(item.name for item in loaded_exercises)
         by_lower_name = self._build_exercise_lower_map(loaded_exercises)
@@ -128,9 +142,13 @@ class WorkoutGenerationService:
         )
 
         if follow_up_response.refusal:
-            raise AiRefusalError(f"Model refused to generate workout: {follow_up_response.refusal}")
+            raise AiRefusalError(
+                f"Model refused to generate workout: {follow_up_response.refusal}"
+            )
         if not follow_up_response.content:
-            raise AiEmptyResponseError("OpenAI returned no message content and no refusal")
+            raise AiEmptyResponseError(
+                "OpenAI returned no message content and no refusal"
+            )
 
         logger.debug(
             "structured_response_received",
@@ -142,7 +160,9 @@ class WorkoutGenerationService:
             raw_payload = json.loads(follow_up_response.content.strip())
             payload = AiWorkoutResponse.model_validate(raw_payload)
         except Exception as exc:
-            raise AiResponseFormatError(f"Failed to parse workout JSON from model: {exc}") from exc
+            raise AiResponseFormatError(
+                f"Failed to parse workout JSON from model: {exc}"
+            ) from exc
 
         generated_workout = resolve_workout(
             payload=payload,
@@ -183,15 +203,26 @@ class WorkoutGenerationService:
         if not initial_response.tool_calls:
             assistant_text = initial_response.content or ""
             logger.debug("ai_skipped_tool_calls", content_length=len(assistant_text))
-            return [*prompt_prefix, ChatMessage(role="assistant", content=assistant_text)]
+            return [
+                *prompt_prefix,
+                ChatMessage(role="assistant", content=assistant_text),
+            ]
 
-        tool_responses = await self._tool_dispatcher.dispatch(user_id, initial_response.tool_calls)
+        tool_responses = await self._tool_dispatcher.dispatch(
+            user_id, initial_response.tool_calls
+        )
         if not tool_responses:
-            raise AiEmptyResponseError("Model requested tools but none could be executed")
+            raise AiEmptyResponseError(
+                "Model requested tools but none could be executed"
+            )
 
-        assistant_with_tools = ChatMessage(role="assistant", tool_calls=[item.tool_call for item in tool_responses])
+        assistant_with_tools = ChatMessage(
+            role="assistant", tool_calls=[item.tool_call for item in tool_responses]
+        )
         tool_messages = [
-            ChatMessage(role="tool", content=item.content, tool_call_id=item.tool_call.id)
+            ChatMessage(
+                role="tool", content=item.content, tool_call_id=item.tool_call.id
+            )
             for item in tool_responses
         ]
         return [*prompt_prefix, assistant_with_tools, *tool_messages]
