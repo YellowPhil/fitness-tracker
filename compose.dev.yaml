@@ -38,8 +38,8 @@ services:
 
   workout-generator:
     build:
-      context: ./services/workout-generator-py
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/workout-generator-py/Dockerfile
     environment:
       - WG_APP_ENV=${WG_APP_ENV:-dev}
       - WG_GRPC_BIND_ADDR=${WG_GRPC_BIND_ADDR:-0.0.0.0:50052}

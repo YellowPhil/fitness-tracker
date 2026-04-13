@@ -9,7 +9,9 @@ import structlog
 from app.application.errors import ApplicationError
 from app.application.services.workout_generation_service import WorkoutGenerationService
 from app.domain.models import GenerateWorkoutCommand
-from fitness_tracker import common_pb2, workout_generator_pb2, workout_generator_pb2_grpc
+import fitness_tracker.common_pb2 as common_pb2
+import fitness_tracker.workout_generator_pb2 as workout_generator_pb2
+import fitness_tracker.workout_generator_pb2_grpc as workout_generator_pb2_grpc
 
 
 logger = structlog.get_logger(__name__)
