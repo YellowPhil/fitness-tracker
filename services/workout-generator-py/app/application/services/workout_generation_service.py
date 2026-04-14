@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from uuid import MAX
 
 import structlog
 from structlog.contextvars import bind_contextvars
