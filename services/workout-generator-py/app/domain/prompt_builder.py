@@ -45,7 +45,9 @@ def build_user_prompt_content(
         )
     if workout_preferences.notes:
         preference_lines.append(f"- notes: {workout_preferences.notes}")
-    preferences_section = "\n".join(preference_lines) if preference_lines else "- none provided"
+    preferences_section = (
+        "\n".join(preference_lines) if preference_lines else "- none provided"
+    )
 
     weighted_names = sorted(
         e.name for e in exercises if e.kind == ExerciseKind.WEIGHTED
@@ -72,23 +74,30 @@ def build_user_prompt_content(
 
     all_names = "\n".join(exercise_names)
 
-    return (
-        f"Target workout date: {workout_date.isoformat()}\n"
-        f"Muscle groups: {groups}\n"
-        f"Maximum number of exercises (hard cap): {max_exercise_count}\n\n"
-        "Current health profile parameters (use this context when choosing exercise volume and loads):\n"
-        f"{profile_section}\n\n"
-        "Current workout generation preferences (respect these when possible):\n"
-        f"{preferences_section}\n\n"
-        f"{weighted_section}"
-        f"{bodyweight_section}"
-        "Allowed exercise names (use ONLY these exact strings in your final JSON output):\n"
-        f"{all_names}\n\n"
-        "Rules for weight_kg:\n"
-        "- Weighted exercises: weight_kg MUST be a positive number (kg). "
-        "If no historical data is available, prescribe a conservative but realistic working weight.\n"
-        "- Bodyweight exercises: weight_kg MUST be null.\n\n"
-        "Generate a workout plan for the given date. "
-        f"The `exercises` array must contain at most {max_exercise_count} entries. "
-        "Use the tools to check past workouts before prescribing loads."
-    )
+    return f"""
+        Target workout date: {workout_date.isoformat()}
+        Muscle groups: {groups}
+        Maximum number of exercises (hard cap): {max_exercise_count}
+        Current health profile parameters (use this context when choosing exercise volume and loads):
+        {profile_section}
+        Current workout generation preferences (respect these when possible):
+        {preferences_section}
+        {weighted_section}
+        {bodyweight_section}
+        Allowed exercise names (use ONLY these exact strings in your final JSON output):
+        {all_names}
+        Rules for weight_kg:
+        - Weighted exercises: weight_kg MUST be a positive number (kg).
+        If no historical data is available, prescribe a conservative but realistic working weight.
+        - Bodyweight exercises: weight_kg MUST be null.
+        Generate a workout plan for the given date.
+        The `exercises` array must contain at most {max_exercise_count} entries.
+        Before prescribing loads, use the workout_query tool with last_n=3 for EACH
+        requested muscle group to retrieve recent weight history.
+        Weight prescription rules:
+        - Build a healthy progression of the weights optimized for the user's preferences and health
+        - Base weight_kg directly on the progressions of the recent working weights shown in the tool
+        results, not on general estimates.
+        - If no history exists for an exercise, prescribe a conservative but realistic
+        starting weight.
+        """
