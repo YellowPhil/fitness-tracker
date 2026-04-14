@@ -1,7 +1,8 @@
 use domain::{
     traits::WorkoutRepo,
     types::{
-        ExerciseId, LoadType, PerformedSet, Workout, WorkoutExercise, WorkoutId, WorkoutSource,
+        ExerciseId, LoadType, MuscleGroup, PerformedSet, Workout, WorkoutExercise, WorkoutId,
+        WorkoutSource,
     },
     types::{UserId, Weight, WeightUnits},
 };
@@ -9,7 +10,7 @@ use sqlx::{Pool, Postgres, Row, postgres::PgRow};
 use time::{Date, OffsetDateTime};
 use tracing::instrument;
 
-use super::postgres_types::{PgLoadType, PgWeightUnits, PgWorkoutSource};
+use super::postgres_types::{PgLoadType, PgMuscleGroup, PgWeightUnits, PgWorkoutSource};
 
 #[derive(Debug, thiserror::Error)]
 pub enum PostgresWorkoutRepoError {
@@ -423,6 +424,74 @@ impl WorkoutRepo for PostgresWorkoutRepo {
              LIMIT $2",
         )
         .bind(self.user_id.as_i64())
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut workouts = Vec::with_capacity(rows.len());
+        for row in rows {
+            let (id, name, start_date, end_date, source) = workout_header_from_row(row);
+            workouts.push(
+                self.build_workout(id, name, start_date, end_date, source)
+                    .await?,
+            );
+        }
+        Ok(workouts)
+    }
+
+    #[instrument(skip(self), fields(table = "workouts", muscle_group = ?muscle_group), err)]
+    async fn get_latest_for_muscle_group(
+        &self,
+        muscle_group: MuscleGroup,
+    ) -> Result<Option<Workout>, Self::RepoError> {
+        let pg_muscle_group = PgMuscleGroup::from(muscle_group);
+        let row = sqlx::query(
+            "SELECT DISTINCT w.id, w.name, w.start_date, w.end_date, w.source
+             FROM workouts w
+             JOIN workout_exercises we ON we.workout_id = w.id AND we.user_id = w.user_id
+             JOIN exercises e ON e.id = we.exercise_id AND e.user_id = w.user_id
+             WHERE w.user_id = $1
+               AND (e.muscle_group = $2 OR $2 = ANY(e.secondary_muscle_groups))
+             ORDER BY w.start_date DESC
+             LIMIT 1",
+        )
+        .bind(self.user_id.as_i64())
+        .bind(pg_muscle_group)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        match row {
+            None => Ok(None),
+            Some(r) => {
+                let (id, name, start_date, end_date, source) = workout_header_from_row(r);
+                Ok(Some(
+                    self.build_workout(id, name, start_date, end_date, source)
+                        .await?,
+                ))
+            }
+        }
+    }
+
+    #[instrument(skip(self), fields(table = "workouts", n = n, muscle_group = ?muscle_group), err)]
+    async fn get_last_n_for_muscle_group(
+        &self,
+        n: usize,
+        muscle_group: MuscleGroup,
+    ) -> Result<Vec<Workout>, Self::RepoError> {
+        let limit = to_i64(n, "limit")?;
+        let pg_muscle_group = PgMuscleGroup::from(muscle_group);
+        let rows = sqlx::query(
+            "SELECT DISTINCT w.id, w.name, w.start_date, w.end_date, w.source
+             FROM workouts w
+             JOIN workout_exercises we ON we.workout_id = w.id AND we.user_id = w.user_id
+             JOIN exercises e ON e.id = we.exercise_id AND e.user_id = w.user_id
+             WHERE w.user_id = $1
+               AND (e.muscle_group = $2 OR $2 = ANY(e.secondary_muscle_groups))
+             ORDER BY w.start_date DESC
+             LIMIT $3",
+        )
+        .bind(self.user_id.as_i64())
+        .bind(pg_muscle_group)
         .bind(limit)
         .fetch_all(&self.pool)
         .await?;

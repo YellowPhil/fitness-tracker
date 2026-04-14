@@ -58,6 +58,17 @@ pub trait WorkoutRepo {
 
     async fn get_last_n(&self, n: usize) -> Result<Vec<Workout>, Self::RepoError>;
 
+    async fn get_latest_for_muscle_group(
+        &self,
+        muscle_group: MuscleGroup,
+    ) -> Result<Option<Workout>, Self::RepoError>;
+
+    async fn get_last_n_for_muscle_group(
+        &self,
+        n: usize,
+        muscle_group: MuscleGroup,
+    ) -> Result<Vec<Workout>, Self::RepoError>;
+
     async fn delete(&self, id: &WorkoutId) -> Result<(), Self::RepoError>;
 
     async fn update_name(&self, id: &WorkoutId, name: Option<&str>) -> Result<(), Self::RepoError>;

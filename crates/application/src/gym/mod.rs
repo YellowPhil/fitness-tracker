@@ -296,18 +296,31 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
         &self,
         query: WorkoutQuery,
     ) -> Result<WorkoutQueryResult, AppError<E::RepoError, W::RepoError>> {
-        let mut workouts = match query.date {
-            QueryType::OnDate(date) => self
+        let muscle_group = query.muscle_group;
+        let mut workouts = match (query.date, muscle_group) {
+            (QueryType::OnDate(date), _) => self
                 .workout_repo
                 .get_by_date(date)
                 .await
                 .map_err(AppError::WorkoutRepo)?,
-            QueryType::LastN(n) => self
+            (QueryType::LastN(n), Some(mg)) => self
+                .workout_repo
+                .get_last_n_for_muscle_group(n, mg)
+                .await
+                .map_err(AppError::WorkoutRepo)?,
+            (QueryType::Latest, Some(mg)) => self
+                .workout_repo
+                .get_latest_for_muscle_group(mg)
+                .await
+                .map_err(AppError::WorkoutRepo)?
+                .into_iter()
+                .collect(),
+            (QueryType::LastN(n), None) => self
                 .workout_repo
                 .get_last_n(n)
                 .await
                 .map_err(AppError::WorkoutRepo)?,
-            QueryType::Latest => self
+            (QueryType::Latest, None) => self
                 .workout_repo
                 .get_latest()
                 .await
@@ -326,12 +339,12 @@ impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
             .map(|exercise| (exercise.id, exercise))
             .collect();
 
-        if let Some(muscle_group) = query.muscle_group {
+        if let Some(mg) = muscle_group {
             for workout in &mut workouts {
                 workout.entries.retain(|entry| {
                     excercises
                         .get(&entry.exercise_id)
-                        .is_some_and(|exercise| exercise.matches_muscle_group(muscle_group))
+                        .is_some_and(|exercise| exercise.matches_muscle_group(mg))
                 });
             }
             workouts.retain(|w| !w.entries.is_empty());
