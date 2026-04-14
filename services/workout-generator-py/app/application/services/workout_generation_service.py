@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from uuid import MAX
 
 import structlog
 from structlog.contextvars import bind_contextvars
@@ -19,7 +20,7 @@ from app.application.ports.ai_client import (
 )
 from app.application.ports.tool_data_provider import ToolDataProvider
 from app.application.services.tool_dispatcher import ToolDispatcher
-from app.domain.constants import EXERCISE_LIST_TOOL, WORKOUT_QUERY_TOOL
+from app.domain.constants import EXERCISE_LIST_TOOL, MAX_TOOL_ROUNDS, WORKOUT_QUERY_TOOL
 from app.domain.models import (
     AiWorkoutResponse,
     ExerciseCatalogItem,
@@ -63,7 +64,9 @@ class WorkoutGenerationService:
             count=len(health_profile),
         )
 
-        workout_preferences = await self._provider.load_workout_preferences(command.user_id)
+        workout_preferences = await self._provider.load_workout_preferences(
+            command.user_id
+        )
         logger.debug(
             "workout_preferences_loaded",
             has_any=any(
@@ -114,50 +117,63 @@ class WorkoutGenerationService:
             build_exercise_list_tool(command.muscle_groups),
         ]
 
-        logger.debug(
-            "ai_initial_request_sent",
-            model=self._model,
-            message_count=len(initial_messages),
-        )
+        messages = initial_messages
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
 
-        initial_response = await self._ai_client.complete(
-            CompletionRequest(
+        for round_num in range(MAX_TOOL_ROUNDS):
+            logger.debug(
+                "ai_tool_round_sent",
                 model=self._model,
-                max_completion_tokens=self._max_completion_tokens,
-                messages=initial_messages,
-                tools=tools,
-                require_tool_choice=True,
+                round=round_num,
+                message_count=len(messages),
             )
-        )
-        logger.debug(
-            "ai_initial_response_received",
-            has_tool_calls=bool(initial_response.tool_calls),
-            tool_call_count=len(initial_response.tool_calls),
-            has_content=initial_response.content is not None,
-        )
-
-        follow_up_messages = await self._build_follow_up_messages(
-            user_id=command.user_id,
-            prompt_prefix=initial_messages,
-            initial_response=initial_response,
-        )
+            response = await self._ai_client.complete(
+                CompletionRequest(
+                    model=self._model,
+                    max_completion_tokens=self._max_completion_tokens,
+                    messages=messages,
+                    tools=tools,
+                )
+            )
+            if response.usage is not None:
+                prompt_tokens += response.usage.prompt_tokens
+                completion_tokens += response.usage.completion_tokens
+                total_tokens += response.usage.total_tokens
+            logger.debug(
+                "ai_tool_round_received",
+                round=round_num,
+                has_tool_calls=bool(response.tool_calls),
+                tool_call_count=len(response.tool_calls),
+            )
+            if not response.tool_calls:
+                break
+            messages = await self._build_follow_up_messages(
+                user_id=command.user_id,
+                prompt_prefix=messages,
+                initial_response=response,
+            )
 
         schema = workout_response_schema(sorted_names, command.max_exercise_count)
         logger.debug(
-            "ai_followup_request_sent",
-            message_count=len(follow_up_messages),
-            has_schema=True,
+            "ai_structured_request_sent",
+            message_count=len(messages),
         )
         follow_up_response = await self._ai_client.complete(
             CompletionRequest(
                 model=self._model,
                 max_completion_tokens=self._max_completion_tokens,
-                messages=follow_up_messages,
+                messages=messages,
                 response_schema=schema,
             )
         )
+        if follow_up_response.usage is not None:
+            prompt_tokens += follow_up_response.usage.prompt_tokens
+            completion_tokens += follow_up_response.usage.completion_tokens
+            total_tokens += follow_up_response.usage.total_tokens
         logger.debug(
-            "ai_followup_response_received",
+            "ai_structured_response_received",
             has_refusal=follow_up_response.refusal is not None,
             content_length=len(follow_up_response.content or ""),
             has_content=follow_up_response.content is not None,
@@ -192,18 +208,6 @@ class WorkoutGenerationService:
             max_exercise_count=command.max_exercise_count,
         )
 
-        prompt_tokens = 0
-        completion_tokens = 0
-        total_tokens = 0
-        if initial_response.usage is not None:
-            prompt_tokens += initial_response.usage.prompt_tokens
-            completion_tokens += initial_response.usage.completion_tokens
-            total_tokens += initial_response.usage.total_tokens
-        if follow_up_response.usage is not None:
-            prompt_tokens += follow_up_response.usage.prompt_tokens
-            completion_tokens += follow_up_response.usage.completion_tokens
-            total_tokens += follow_up_response.usage.total_tokens
-
         logger.info(
             "workout_generated",
             workout_name=generated_workout.workout_name,
@@ -236,6 +240,14 @@ class WorkoutGenerationService:
         if not tool_responses:
             raise AiEmptyResponseError(
                 "Model requested tools but none could be executed"
+            )
+
+        for item in tool_responses:
+            logger.debug(
+                "tool_result",
+                tool_name=item.tool_call.name,
+                content_length=len(item.content or ""),
+                preview=(item.content or "")[:500],
             )
 
         assistant_with_tools = ChatMessage(
