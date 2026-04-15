@@ -4,6 +4,8 @@ import * as api from "./api";
 import type {
   Exercise,
   ExerciseKind,
+  GenerationJob,
+  GenerationJobStatus,
   MuscleGroup,
   PerformedSet,
   UserProfile,
@@ -32,9 +34,15 @@ interface GymStore {
 
   syncError: string | null;
   isLoading: boolean;
+  generationJobsById: Record<string, GenerationJob>;
+  activeGenerationJobId: string | null;
+  generationStreamConnected: boolean;
+  generationStreamStop: (() => void) | null;
 
   bootstrap: () => Promise<void>;
   clearSyncError: () => void;
+  connectGenerationStream: () => void;
+  disconnectGenerationStream: () => void;
 
   setCalendarViewport: (year: number, month: number) => void;
   refreshExercises: () => Promise<void>;
@@ -91,6 +99,35 @@ async function afterWorkoutMutation(get: () => GymStore) {
   ]);
 }
 
+function isActiveGenerationStatus(status: GenerationJobStatus): boolean {
+  return status === "queued" || status === "running";
+}
+
+function selectActiveGenerationJobId(
+  jobsById: Record<string, GenerationJob>,
+): string | null {
+  const activeJobs = Object.values(jobsById).filter((job) =>
+    isActiveGenerationStatus(job.status),
+  );
+  if (activeJobs.length === 0) return null;
+  activeJobs.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return activeJobs[0].id;
+}
+
+function mergeGenerationJobs(
+  current: Record<string, GenerationJob>,
+  incoming: GenerationJob[],
+): Record<string, GenerationJob> {
+  const next = { ...current };
+  for (const job of incoming) {
+    const prev = next[job.id];
+    if (!prev || job.version >= prev.version) {
+      next[job.id] = job;
+    }
+  }
+  return next;
+}
+
 export const useStore = create<GymStore>()(
   persist(
     (set, get) => ({
@@ -109,8 +146,68 @@ export const useStore = create<GymStore>()(
 
       syncError: null,
       isLoading: true,
+      generationJobsById: {},
+      activeGenerationJobId: null,
+      generationStreamConnected: false,
+      generationStreamStop: null,
 
       clearSyncError: () => set({ syncError: null }),
+
+      connectGenerationStream: () => {
+        const current = get();
+        if (current.generationStreamConnected) return;
+
+        const stop = api.connectGenerationJobsStream({
+          onSnapshot: (jobs) => {
+            set((state) => {
+              const generationJobsById = mergeGenerationJobs(state.generationJobsById, jobs);
+              return {
+                generationJobsById,
+                activeGenerationJobId: selectActiveGenerationJobId(generationJobsById),
+              };
+            });
+          },
+          onJobUpdated: (job) => {
+            const previous = get().generationJobsById[job.id];
+            set((state) => {
+              const generationJobsById = mergeGenerationJobs(state.generationJobsById, [job]);
+              return {
+                generationJobsById,
+                activeGenerationJobId: selectActiveGenerationJobId(generationJobsById),
+              };
+            });
+
+            if (
+              !previous ||
+              previous.status !== job.status ||
+              previous.workoutId !== job.workoutId
+            ) {
+              const selectedDate = get().selectedDate;
+              if (job.date === selectedDate || job.status === "completed") {
+                void afterWorkoutMutation(get);
+              }
+            }
+          },
+          onError: (error) => {
+            set({
+              generationStreamConnected: false,
+              generationStreamStop: null,
+              syncError: error.message,
+            });
+            window.setTimeout(() => {
+              get().connectGenerationStream();
+            }, 1500);
+          },
+        });
+
+        set({ generationStreamConnected: true, generationStreamStop: stop });
+      },
+
+      disconnectGenerationStream: () => {
+        const stop = get().generationStreamStop;
+        if (stop) stop();
+        set({ generationStreamConnected: false, generationStreamStop: null });
+      },
 
       bootstrap: async () => {
         set({ isLoading: true, syncError: null });
@@ -120,7 +217,20 @@ export const useStore = create<GymStore>()(
             calendarViewYear: now.getFullYear(),
             calendarViewMonth: now.getMonth(),
           });
-          await Promise.all([get().refreshExercises(), get().refreshWorkouts()]);
+          const [jobs] = await Promise.all([
+            api.listGenerationJobs("all", 20),
+            get().refreshExercises(),
+            get().refreshWorkouts(),
+          ]);
+          const generationJobsById = jobs.reduce<Record<string, GenerationJob>>((acc, job) => {
+            acc[job.id] = job;
+            return acc;
+          }, {});
+          set({
+            generationJobsById,
+            activeGenerationJobId: selectActiveGenerationJobId(generationJobsById),
+          });
+          get().connectGenerationStream();
         } catch (e) {
           set({
             syncError: e instanceof Error ? e.message : String(e),
@@ -212,8 +322,21 @@ export const useStore = create<GymStore>()(
 
       generateWorkout: async (muscleGroups, maxExerciseCount, date) => {
         try {
-          await api.generateWorkoutApi(muscleGroups, maxExerciseCount, date);
-          await afterWorkoutMutation(get);
+          const result = await api.generateWorkoutApi(
+            muscleGroups,
+            maxExerciseCount,
+            date,
+          );
+          set((state) => {
+            const generationJobsById = {
+              ...state.generationJobsById,
+              [result.job.id]: result.job,
+            };
+            return {
+              generationJobsById,
+              activeGenerationJobId: selectActiveGenerationJobId(generationJobsById),
+            };
+          });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           set({ syncError: msg });
@@ -383,6 +506,8 @@ export const useStore = create<GymStore>()(
       partialize: (s) => ({
         selectedDate: s.selectedDate,
         currentView: s.currentView,
+        generationJobsById: s.generationJobsById,
+        activeGenerationJobId: s.activeGenerationJobId,
       }),
     },
   ),

@@ -126,7 +126,7 @@ All config is via environment variables. See `.env.example` for the full list.
 | `TELOXIDE_TOKEN` | Yes (prod) | Telegram bot token; used for both bot process and Mini App auth |
 | `BIND_ADDR` | No | Default `0.0.0.0:3001` |
 | `FRONTEND_URL` | Prod only | Public frontend URL; enables CORS for cross-origin setups |
-| `OPENAI_API_KEY` | No | Enables `POST /api/workouts/generate` (AI workout plans) |
+| `OPENAI_API_KEY` | No | Enables `POST /api/v1/workouts/generate` (AI workout plans) |
 | `ALLOWED_USER_IDS` | No | Comma-separated Telegram user IDs; unset = all users allowed |
 | `RUST_LOG` | No | Default `info`; use `debug` during development |
 | `DEV_SKIP_AUTH` | No | Accept `x-user-id` header without Telegram validation (local dev only) |
@@ -150,7 +150,7 @@ All endpoints require authentication (`Authorization: tma <initData>` or `x-user
 | GET | `/api/workouts?date=YYYY-MM-DD` | List workouts for a date |
 | GET | `/api/workouts/dates?from=…&to=…` | Dates that have workouts |
 | POST | `/api/workouts` | Create a workout |
-| POST | `/api/workouts/generate` | AI-generate a workout (requires `OPENAI_API_KEY`) |
+| POST | `/api/v1/workouts/generate` | Queue AI workout generation (requires `OPENAI_API_KEY`) |
 | PATCH | `/api/workouts/:id` | Update workout name |
 | DELETE | `/api/workouts/:id` | Delete a workout |
 | POST | `/api/workouts/:id/exercises` | Add exercise to workout |

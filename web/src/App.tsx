@@ -48,10 +48,14 @@ export function App() {
   const isLoading = useStore((s) => s.isLoading);
   const syncError = useStore((s) => s.syncError);
   const clearSyncError = useStore((s) => s.clearSyncError);
+  const disconnectGenerationStream = useStore((s) => s.disconnectGenerationStream);
 
   useEffect(() => {
     void bootstrap();
-  }, [bootstrap]);
+    return () => {
+      disconnectGenerationStream();
+    };
+  }, [bootstrap, disconnectGenerationStream]);
 
   /** Mobile: scroll focused inputs into view when the keyboard opens / viewport shrinks. */
   useEffect(() => {

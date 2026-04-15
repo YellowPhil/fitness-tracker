@@ -6,3 +6,5 @@ fitness.db
 generated/
 .envrc
 data/
+.opencode/
+thoughts/

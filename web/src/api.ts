@@ -1,6 +1,7 @@
 import type {
   Exercise,
   ExerciseKind,
+  GenerationJob,
   ExerciseSource,
   HeightUnits,
   MuscleGroup,
@@ -117,6 +118,35 @@ interface ApiExercise {
   source: string;
 }
 
+interface ApiGenerationJob {
+  id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  date: string;
+  request_fingerprint: string;
+  workout_id: string | null;
+  error: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+  queued_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  failed_at: string | null;
+}
+
+interface ApiEnqueueGenerationResponse {
+  job: ApiGenerationJob;
+  deduplicated: boolean;
+}
+
+interface ApiGenerationJobsResponse {
+  jobs: ApiGenerationJob[];
+}
+
+interface ApiGenerationJobResponse {
+  job: ApiGenerationJob;
+}
+
 const MUSCLE: MuscleGroup[] = ["Chest", "Back", "Shoulders", "Arms", "Legs", "Core"];
 
 function mapMuscleGroup(s: string): MuscleGroup {
@@ -193,6 +223,24 @@ export function mapWorkoutFromApi(w: ApiWorkout): Workout {
   };
 }
 
+function mapGenerationJobFromApi(job: ApiGenerationJob): GenerationJob {
+  return {
+    id: job.id,
+    status: job.status,
+    date: job.date,
+    requestFingerprint: job.request_fingerprint,
+    workoutId: job.workout_id ?? undefined,
+    error: job.error ?? undefined,
+    version: job.version,
+    createdAt: job.created_at,
+    updatedAt: job.updated_at,
+    queuedAt: job.queued_at,
+    startedAt: job.started_at ?? undefined,
+    completedAt: job.completed_at ?? undefined,
+    failedAt: job.failed_at ?? undefined,
+  };
+}
+
 function mapLoadToApi(kind: PerformedSet["kind"]): Record<string, unknown> {
   if (kind.type === "BodyWeight") {
     return { type: "bodyweight" };
@@ -263,12 +311,12 @@ export async function createWorkoutApi(
   return mapWorkoutFromApi(w);
 }
 
-/** AI-generated workout plan; requires `OPENAI_API_KEY` on the server. */
+/** Enqueues AI workout generation; requires `OPENAI_API_KEY` on the server. */
 export async function generateWorkoutApi(
   muscleGroups: MuscleGroup[],
   maxExerciseCount: number,
   date?: string,
-): Promise<Workout> {
+): Promise<{ job: GenerationJob; deduplicated: boolean }> {
   const body: Record<string, unknown> = {
     muscle_groups: muscleGroups,
     max_exercise_count: maxExerciseCount,
@@ -276,11 +324,107 @@ export async function generateWorkoutApi(
   if (date !== undefined) {
     body.date = `${date}T00:00:00Z`;
   }
-  const w = await apiFetch<ApiWorkout>("/api/workouts/generate", {
+  const res = await apiFetch<ApiEnqueueGenerationResponse>("/api/v1/workouts/generate", {
     method: "POST",
     body: JSON.stringify(body),
   });
-  return mapWorkoutFromApi(w);
+  return {
+    job: mapGenerationJobFromApi(res.job),
+    deduplicated: res.deduplicated,
+  };
+}
+
+export async function listGenerationJobs(
+  status: "all" | "active" = "all",
+  limit = 20,
+): Promise<GenerationJob[]> {
+  const q = new URLSearchParams({ status, limit: String(limit) });
+  const res = await apiFetch<ApiGenerationJobsResponse>(
+    `/api/workout-generation-jobs?${q}`,
+  );
+  return res.jobs.map(mapGenerationJobFromApi);
+}
+
+export async function getGenerationJob(jobId: string): Promise<GenerationJob> {
+  const res = await apiFetch<ApiGenerationJobResponse>(
+    `/api/workout-generation-jobs/${encodeURIComponent(jobId)}`,
+  );
+  return mapGenerationJobFromApi(res.job);
+}
+
+interface GenerationStreamHandlers {
+  onSnapshot: (jobs: GenerationJob[]) => void;
+  onJobUpdated: (job: GenerationJob) => void;
+  onError: (error: Error) => void;
+}
+
+export function connectGenerationJobsStream(handlers: GenerationStreamHandlers): () => void {
+  const abortController = new AbortController();
+
+  void (async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/workout-generation-jobs/stream`, {
+        method: "GET",
+        headers: headers(),
+        signal: abortController.signal,
+      });
+
+      if (!res.ok || !res.body) {
+        throw new Error(await parseError(res));
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() ?? "";
+
+        for (const frame of frames) {
+          const parsed = parseSseFrame(frame);
+          if (!parsed?.data) continue;
+          if (parsed.event === "snapshot") {
+            const payload = JSON.parse(parsed.data) as ApiGenerationJobsResponse;
+            handlers.onSnapshot(payload.jobs.map(mapGenerationJobFromApi));
+            continue;
+          }
+          if (parsed.event === "job.updated") {
+            const payload = JSON.parse(parsed.data) as ApiGenerationJobResponse;
+            handlers.onJobUpdated(mapGenerationJobFromApi(payload.job));
+          }
+        }
+      }
+    } catch (error) {
+      if (!abortController.signal.aborted) {
+        handlers.onError(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
+  })();
+
+  return () => {
+    abortController.abort();
+  };
+}
+
+function parseSseFrame(frame: string): { event: string; data: string } | null {
+  let event = "message";
+  const dataLines: string[] = [];
+  for (const line of frame.split("\n")) {
+    if (line.startsWith("event:")) {
+      event = line.slice(6).trim();
+      continue;
+    }
+    if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+  }
+  if (dataLines.length === 0) return null;
+  return { event, data: dataLines.join("\n") };
 }
 
 export async function deleteWorkoutApi(id: string): Promise<void> {

@@ -1,7 +1,13 @@
 import { useState, useRef, useEffect, useCallback, type FormEvent } from "react";
 import { useStore } from "../store";
 import { cn, formatDateHeading } from "../utils";
-import type { Exercise, PerformedSet, WorkoutExercise, Workout } from "../types";
+import type {
+  Exercise,
+  GenerationJob,
+  PerformedSet,
+  WorkoutExercise,
+  Workout,
+} from "../types";
 import { ExercisePicker } from "./ExercisePicker";
 import { GenerateWorkoutModal } from "./GenerateWorkoutModal";
 
@@ -10,10 +16,14 @@ export function WorkoutView() {
   const workouts = useStore((s) => s.workouts);
   const exercises = useStore((s) => s.exercises);
   const createWorkout = useStore((s) => s.createWorkout);
+  const generationJobsById = useStore((s) => s.generationJobsById);
 
   const [showGenerateModal, setShowGenerateModal] = useState(false);
 
   const dateWorkouts = workouts.filter((w) => w.startDate === selectedDate);
+  const dateGenerationJob = Object.values(generationJobsById)
+    .filter((job) => job.date === selectedDate)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
 
   return (
     <section className="px-4 pb-12 animate-fade-in" aria-label="Workouts">
@@ -41,6 +51,8 @@ export function WorkoutView() {
         )}
       </div>
 
+      {dateGenerationJob && <GenerationStatusCard job={dateGenerationJob} />}
+
       {dateWorkouts.length === 0 ? (
         <EmptyState
           onStart={() => void createWorkout(selectedDate)}
@@ -64,6 +76,30 @@ export function WorkoutView() {
         date={selectedDate}
       />
     </section>
+  );
+}
+
+function GenerationStatusCard({ job }: { job: GenerationJob }) {
+  if (job.status === "completed") {
+    return (
+      <div className="mb-4 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+        Workout generation completed.
+      </div>
+    );
+  }
+
+  if (job.status === "failed") {
+    return (
+      <div className="mb-4 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-fg">
+        Generation failed{job.error ? `: ${job.error}` : "."}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-4 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-xs text-fg-secondary">
+      {job.status === "running" ? "Generating workout…" : "Workout generation queued…"}
+    </div>
   );
 }
 

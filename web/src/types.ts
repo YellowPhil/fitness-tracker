@@ -63,6 +63,28 @@ export interface Workout {
   entries: WorkoutExercise[];
 }
 
+export type GenerationJobStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed";
+
+export interface GenerationJob {
+  id: string;
+  status: GenerationJobStatus;
+  date: string;
+  requestFingerprint: string;
+  workoutId?: string;
+  error?: string;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  queuedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  failedAt?: string;
+}
+
 export type HeightUnits = "cm" | "in";
 
 export type WorkoutSplit =

@@ -2,24 +2,18 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::{Json, Router};
 use domain::types::Weight;
-use domain::types::{
-    ExerciseId, LoadType, MuscleGroup, PerformedSet, WeightUnits, Workout, WorkoutExercise,
-    WorkoutId,
-};
-use fitness_tracker_proto::common::MuscleGroup as ProtoMuscleGroup;
-use fitness_tracker_proto::workout_generator::GenerateWorkoutRequest as GenerateWorkoutGrpcRequest;
+use domain::types::{ExerciseId, LoadType, PerformedSet, Workout, WorkoutExercise, WorkoutId};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use tracing::instrument;
 
-use super::types::{MuscleGroupReq, Name, WeightUnitsReq};
+use super::types::{Name, WeightUnitsReq};
 use super::{ApiError, AppState, AuthUser};
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/", axum::routing::get(list_workouts).post(create_workout))
         .route("/dates", axum::routing::get(get_workout_dates))
-        .route("/generate", axum::routing::post(generate_workout_ai))
         .route(
             "/{workout_id}",
             axum::routing::get(get_workout)
@@ -123,15 +117,6 @@ struct CreateWorkoutRequest {
 }
 
 #[derive(Deserialize)]
-struct GenerateWorkoutRequest {
-    /// Muscle group names as returned by the API (e.g. `"Chest"`, `"Legs"`).
-    muscle_groups: Vec<MuscleGroupReq>,
-    max_exercise_count: usize,
-    #[serde(default, with = "time::serde::rfc3339::option")]
-    date: Option<OffsetDateTime>,
-}
-
-#[derive(Deserialize)]
 struct ListWorkoutsQuery {
     date: Option<String>,
 }
@@ -227,120 +212,6 @@ async fn create_workout(
         .await
         .map_err(ApiError::internal)?;
     Ok((StatusCode::CREATED, Json(workout.into())))
-}
-
-#[instrument(
-    skip(state, user, body),
-    fields(
-        user_id = user.0.as_i64(),
-        muscle_group_count = body.muscle_groups.len(),
-        max_exercise_count = body.max_exercise_count
-    )
-)]
-async fn generate_workout_ai(
-    user: AuthUser,
-    State(state): State<AppState>,
-    Json(body): Json<GenerateWorkoutRequest>,
-) -> Result<(StatusCode, Json<WorkoutResponse>), ApiError> {
-    if body.muscle_groups.is_empty() {
-        return Err(ApiError::validation("muscle_groups must not be empty"));
-    }
-    if body.max_exercise_count == 0 {
-        return Err(ApiError::validation(
-            "max_exercise_count must be at least 1",
-        ));
-    }
-
-    let muscle_groups: Vec<MuscleGroup> = body
-        .muscle_groups
-        .into_iter()
-        .map(MuscleGroup::from)
-        .collect();
-
-    let app = state.databases.gym_app(user.0);
-    app.seed_built_in_excercises()
-        .await
-        .map_err(ApiError::internal)?;
-
-    let start_date = body.date.unwrap_or_else(OffsetDateTime::now_utc);
-    let date = start_date.date();
-
-    let max_exercise_count = i32::try_from(body.max_exercise_count)
-        .map_err(|_| ApiError::validation("max_exercise_count is too large"))?;
-
-    let grpc_request = GenerateWorkoutGrpcRequest {
-        user_id: user.0.as_i64(),
-        date: date.to_string(),
-        muscle_groups: muscle_groups
-            .iter()
-            .map(|group| proto_muscle_group(*group) as i32)
-            .collect(),
-        max_exercise_count,
-    };
-
-    let generated = crate::grpc::request_generated_workout(
-        &state.workout_generator_grpc_addr,
-        state.grpc_timeout,
-        grpc_request,
-    )
-    .await
-    .map_err(ApiError::internal)?;
-
-    let entries = generated
-        .exercises
-        .into_iter()
-        .map(map_generated_exercise)
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let workout = Workout::ai_generated(generated.workout_name, start_date, entries);
-
-    state
-        .databases
-        .gym_app(user.0)
-        .save_workout(&workout)
-        .await
-        .map_err(ApiError::internal)?;
-
-    Ok((StatusCode::CREATED, Json(workout.into())))
-}
-
-fn map_generated_exercise(
-    exercise: fitness_tracker_proto::workout_generator::GeneratedExercise,
-) -> Result<WorkoutExercise, ApiError> {
-    let exercise_id = ExerciseId::from_uuid(parse_uuid(&exercise.exercise_id)?);
-
-    let sets = exercise
-        .sets
-        .into_iter()
-        .map(|set| {
-            let reps = u32::try_from(set.reps)
-                .map_err(|_| ApiError::validation("generated set reps must be non-negative"))?;
-            let kind = match set.weight_kg {
-                Some(weight_kg) if weight_kg > 0.0 => {
-                    LoadType::Weighted(Weight::new(weight_kg, WeightUnits::Kilograms))
-                }
-                _ => LoadType::BodyWeight,
-            };
-            Ok(PerformedSet { reps, kind })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    Ok(WorkoutExercise {
-        exercise_id,
-        sets,
-        notes: exercise.notes,
-    })
-}
-
-fn proto_muscle_group(value: MuscleGroup) -> ProtoMuscleGroup {
-    match value {
-        MuscleGroup::Chest => ProtoMuscleGroup::Chest,
-        MuscleGroup::Back => ProtoMuscleGroup::Back,
-        MuscleGroup::Shoulders => ProtoMuscleGroup::Shoulders,
-        MuscleGroup::Arms => ProtoMuscleGroup::Arms,
-        MuscleGroup::Legs => ProtoMuscleGroup::Legs,
-        MuscleGroup::Core => ProtoMuscleGroup::Core,
-    }
 }
 
 #[instrument(

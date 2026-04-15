@@ -4,6 +4,7 @@ pub mod profile;
 pub mod telegram_auth;
 pub mod types;
 pub mod workout;
+pub mod workout_generation_jobs;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -15,20 +16,27 @@ use axum::http::header::{AUTHORIZATION, CONTENT_TYPE};
 use axum::http::request::Parts;
 use axum::http::{HeaderName, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use domain::types::UserId;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, instrument, warn};
 
-use crate::{PostgresExcerciseDb, PostgresHealthDb, PostgresPreferencesDb, PostgresWorkoutDb};
+use crate::generation::GenerationService;
+use crate::generation::dispatcher::InProcessGenerationDispatcher;
+use crate::generation::event_bus::GenerationEventBus;
+use crate::{
+    PostgresExcerciseDb, PostgresGenerationJobDb, PostgresHealthDb, PostgresPreferencesDb,
+    PostgresWorkoutDb,
+};
 
 pub struct Databases {
     pub exercise_db: PostgresExcerciseDb,
     pub workout_db: PostgresWorkoutDb,
     pub health_db: PostgresHealthDb,
     pub preferences_db: PostgresPreferencesDb,
+    pub generation_jobs_db: PostgresGenerationJobDb,
 }
 pub enum ApiError {
     Unauthorized,
@@ -60,12 +68,14 @@ impl Databases {
         workout_db: PostgresWorkoutDb,
         health_db: PostgresHealthDb,
         preferences_db: PostgresPreferencesDb,
+        generation_jobs_db: PostgresGenerationJobDb,
     ) -> Self {
         Self {
             exercise_db,
             workout_db,
             health_db,
             preferences_db,
+            generation_jobs_db,
         }
     }
 
@@ -78,7 +88,8 @@ impl Databases {
             PostgresExcerciseDb::new(pool.clone()),
             PostgresWorkoutDb::new(pool.clone()),
             PostgresHealthDb::new(pool.clone()),
-            PostgresPreferencesDb::new(pool),
+            PostgresPreferencesDb::new(pool.clone()),
+            PostgresGenerationJobDb::new(pool),
         ))
     }
 
@@ -111,13 +122,15 @@ pub struct InnerState {
     pub bot_token: Option<String>,
     /// When `true` and `bot_token` is `None`, accept legacy `x-user-id` (local dev only).
     pub dev_skip_auth: bool,
-    /// gRPC address for workout generation service (for `POST /api/workouts/generate`).
+    /// gRPC address for workout generation service (for `POST /api/v1/workouts/generate`).
     pub workout_generator_grpc_addr: String,
     /// When `Some`, only the listed Telegram user IDs may access the API.
     /// When `None`, every authenticated user is allowed.
     pub allowed_user_ids: Option<Vec<i64>>,
     /// Timeout for gRPC requests to the workout generation service.
     pub grpc_timeout: std::time::Duration,
+    pub generation_service: Arc<GenerationService>,
+    pub generation_event_bus: GenerationEventBus,
 }
 
 pub type AppState = Arc<InnerState>;
@@ -131,6 +144,19 @@ pub fn router(
     allowed_user_ids: Option<Vec<i64>>,
     grpc_timeout: std::time::Duration,
 ) -> Router<()> {
+    let generation_event_bus = GenerationEventBus::default();
+    let generation_dispatcher = Arc::new(InProcessGenerationDispatcher {
+        databases: Arc::clone(&dbs),
+        generation_jobs_db: dbs.generation_jobs_db.clone(),
+        event_bus: generation_event_bus.clone(),
+        workout_generator_grpc_addr: workout_generator_grpc_addr.clone(),
+        grpc_timeout,
+    });
+    let generation_service = Arc::new(GenerationService::new(
+        dbs.generation_jobs_db.clone(),
+        generation_dispatcher,
+    ));
+
     let state: AppState = Arc::new(InnerState {
         databases: dbs,
         bot_token,
@@ -138,11 +164,21 @@ pub fn router(
         workout_generator_grpc_addr,
         allowed_user_ids,
         grpc_timeout,
+        generation_service,
+        generation_event_bus,
     });
 
     Router::new()
+        .route(
+            "/api/v1/workouts/generate",
+            post(workout_generation_jobs::create_generation_job),
+        )
         .nest("/api/exercises", excercise::routes())
         .nest("/api/workouts", workout::routes())
+        .nest(
+            "/api/v2/workouts/generation-jobs",
+            workout_generation_jobs::routes(),
+        )
         .nest("/api/profile", profile::routes())
         .nest("/api/preferences", preferences::routes())
         .with_state(state)

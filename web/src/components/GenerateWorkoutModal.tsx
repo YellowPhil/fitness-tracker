@@ -15,10 +15,18 @@ const MAX_MAX = 12;
 
 export function GenerateWorkoutModal({ open, onClose, date }: Props) {
   const generateWorkout = useStore((s) => s.generateWorkout);
+  const generationJobsById = useStore((s) => s.generationJobsById);
+  const activeGenerationJobId = useStore((s) => s.activeGenerationJobId);
+  const activeJob = activeGenerationJobId
+    ? generationJobsById[activeGenerationJobId]
+    : undefined;
+  const loading =
+    !!activeJob &&
+    activeJob.date === date &&
+    (activeJob.status === "queued" || activeJob.status === "running");
 
   const [selected, setSelected] = useState<MuscleGroup[]>([]);
   const [maxCount, setMaxCount] = useState(DEFAULT_MAX);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function toggleGroup(g: MuscleGroup) {
@@ -38,7 +46,6 @@ export function GenerateWorkoutModal({ open, onClose, date }: Props) {
   async function handleGenerate() {
     if (selected.length === 0 || loading) return;
     setError(null);
-    setLoading(true);
     try {
       await generateWorkout(selected, maxCount, date);
       handleClose();
@@ -49,8 +56,6 @@ export function GenerateWorkoutModal({ open, onClose, date }: Props) {
           ? "AI generation is not available (server not configured)."
           : raw,
       );
-    } finally {
-      setLoading(false);
     }
   }
 

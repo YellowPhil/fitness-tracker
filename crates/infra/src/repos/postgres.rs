@@ -146,6 +146,55 @@ async fn init_schema(pool: &Pool<Postgres>) -> Result<(), sqlx::Error> {
             age INTEGER NOT NULL CHECK (age >= 0)
         );
 
+        CREATE TABLE IF NOT EXISTS generation_jobs (
+            id         UUID PRIMARY KEY,
+            user_id    BIGINT NOT NULL,
+            date       DATE NOT NULL,
+            status     TEXT NOT NULL,
+            request_fingerprint TEXT NOT NULL DEFAULT '',
+            request_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            workout_id UUID NULL,
+            error      TEXT NULL,
+            version BIGINT NOT NULL DEFAULT 1,
+            queued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            started_at TIMESTAMPTZ NULL,
+            completed_at TIMESTAMPTZ NULL,
+            failed_at TIMESTAMPTZ NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        ALTER TABLE generation_jobs
+            ADD COLUMN IF NOT EXISTS request_fingerprint TEXT NOT NULL DEFAULT '';
+
+        ALTER TABLE generation_jobs
+            ADD COLUMN IF NOT EXISTS request_payload JSONB NOT NULL DEFAULT '{}'::jsonb;
+
+        ALTER TABLE generation_jobs
+            ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1;
+
+        ALTER TABLE generation_jobs
+            ADD COLUMN IF NOT EXISTS queued_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
+        ALTER TABLE generation_jobs
+            ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ NULL;
+
+        ALTER TABLE generation_jobs
+            ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ NULL;
+
+        ALTER TABLE generation_jobs
+            ADD COLUMN IF NOT EXISTS failed_at TIMESTAMPTZ NULL;
+
+        CREATE INDEX IF NOT EXISTS generation_jobs_user_status_idx
+            ON generation_jobs (user_id, status);
+
+        CREATE INDEX IF NOT EXISTS generation_jobs_user_created_at_idx
+            ON generation_jobs (user_id, created_at DESC);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS generation_jobs_active_dedupe_idx
+            ON generation_jobs (user_id, date, request_fingerprint)
+            WHERE status IN ('queued', 'running');
+
         CREATE TABLE IF NOT EXISTS workout_preferences (
             user_id BIGINT PRIMARY KEY,
             max_sets_per_exercise SMALLINT,
