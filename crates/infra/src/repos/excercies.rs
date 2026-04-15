@@ -1,5 +1,5 @@
 use domain::{
-    traits::ExcerciseRepo,
+    traits::ExerciseRepo,
     types::UserId,
     types::{Exercise, ExerciseId, ExerciseKind, ExerciseMetadata, MuscleGroup},
 };
@@ -39,7 +39,7 @@ pub struct PostgresExcerciseRepo {
 }
 
 #[async_trait::async_trait]
-impl ExcerciseRepo for PostgresExcerciseRepo {
+impl ExerciseRepo for PostgresExcerciseRepo {
     type RepoError = PostgresExcerciseRepoError;
 
     #[instrument(skip(self), fields(table = "exercises", exercise_id = ?id), err)]

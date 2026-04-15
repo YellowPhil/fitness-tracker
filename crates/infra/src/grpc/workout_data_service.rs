@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use domain::traits::ExcerciseRepo;
+use domain::traits::ExerciseRepo;
 use domain::types::{
     Exercise, ExerciseKind, ExerciseMetadata, MuscleGroup, QueryType, UserId, WorkoutQuery,
 };

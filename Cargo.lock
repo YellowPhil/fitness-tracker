@@ -1383,6 +1383,7 @@ dependencies = [
  "domain",
  "dptree",
  "fitness-tracker-proto",
+ "futures",
  "hex",
  "hmac",
  "schemars 1.2.1",
@@ -1394,6 +1395,7 @@ dependencies = [
  "thiserror 2.0.18",
  "time",
  "tokio",
+ "tokio-stream",
  "tonic",
  "tower-http",
  "tracing",
@@ -3251,6 +3253,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

@@ -12,7 +12,7 @@ use tracing::{debug, instrument};
 
 pub use super::error::AppError;
 
-pub struct GymApp<E: ExcerciseRepo, W: WorkoutRepo> {
+pub struct GymApp<E: ExerciseRepo, W: WorkoutRepo> {
     excercise_repo: E,
     workout_repo: W,
 }
@@ -22,7 +22,7 @@ pub struct WorkoutQueryResult {
     pub excercises: HashMap<ExerciseId, ExerciseMetadata>,
 }
 
-impl<E: ExcerciseRepo, W: WorkoutRepo> GymApp<E, W> {
+impl<E: ExerciseRepo, W: WorkoutRepo> GymApp<E, W> {
     pub fn new(excercise_repo: E, workout_repo: W) -> Self {
         Self {
             excercise_repo,

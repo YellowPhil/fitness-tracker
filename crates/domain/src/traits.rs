@@ -10,7 +10,7 @@ use crate::{
 };
 
 #[async_trait::async_trait]
-pub trait ExcerciseRepo {
+pub trait ExerciseRepo {
     type RepoError: std::error::Error + Send + Sync;
 
     async fn get_by_id(&self, id: &ExerciseId) -> Result<Option<Exercise>, Self::RepoError>;
