@@ -20,6 +20,8 @@ import { getInitData } from "./telegram";
 import { toDateString } from "./utils";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+const API_VERSION = "v2";
+const GENERATION_JOBS_API_BASE = `/api/${API_VERSION}/workouts/generation-jobs`;
 
 /** When not in Telegram, use `x-user-id` (backend must run with `DEV_SKIP_AUTH=1`). */
 const DEV_USER_ID = import.meta.env.VITE_DEV_USER_ID ?? "1";
@@ -340,14 +342,14 @@ export async function listGenerationJobs(
 ): Promise<GenerationJob[]> {
   const q = new URLSearchParams({ status, limit: String(limit) });
   const res = await apiFetch<ApiGenerationJobsResponse>(
-    `/api/workout-generation-jobs?${q}`,
+    `${GENERATION_JOBS_API_BASE}?${q}`,
   );
   return res.jobs.map(mapGenerationJobFromApi);
 }
 
 export async function getGenerationJob(jobId: string): Promise<GenerationJob> {
   const res = await apiFetch<ApiGenerationJobResponse>(
-    `/api/workout-generation-jobs/${encodeURIComponent(jobId)}`,
+    `${GENERATION_JOBS_API_BASE}/${encodeURIComponent(jobId)}`,
   );
   return mapGenerationJobFromApi(res.job);
 }
@@ -363,7 +365,7 @@ export function connectGenerationJobsStream(handlers: GenerationStreamHandlers):
 
   void (async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/workout-generation-jobs/stream`, {
+      const res = await fetch(`${API_BASE}${GENERATION_JOBS_API_BASE}/stream`, {
         method: "GET",
         headers: headers(),
         signal: abortController.signal,
