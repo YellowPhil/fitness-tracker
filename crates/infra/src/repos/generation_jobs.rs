@@ -117,7 +117,7 @@ impl PostgresGenerationJobRepo {
         match created {
             Ok(job) => Ok((job, false)),
             Err(PostgresGenerationJobRepoError::Postgres(sqlx::Error::Database(db_err)))
-                if db_err.code().as_deref() == Some("23505") =>
+                if db_err.is_unique_violation() =>
             {
                 let existing = self
                     .find_active_job(date, request_fingerprint)
