@@ -1,64 +1,10 @@
+use domain::generation::GenerationJobRepo;
+pub use domain::generation::{GenerationJob, GenerationJobListScope, GenerationJobStatus};
 use domain::types::{UserId, WorkoutId};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{Pool, Postgres, Row};
-use time::{Date, OffsetDateTime};
+use time::Date;
 use uuid::Uuid;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum GenerationJobStatus {
-    Queued,
-    Running,
-    Completed,
-    Failed,
-}
-
-impl GenerationJobStatus {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Queued => "queued",
-            Self::Running => "running",
-            Self::Completed => "completed",
-            Self::Failed => "failed",
-        }
-    }
-}
-
-impl TryFrom<&str> for GenerationJobStatus {
-    type Error = PostgresGenerationJobRepoError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "queued" => Ok(Self::Queued),
-            "running" => Ok(Self::Running),
-            "completed" => Ok(Self::Completed),
-            "failed" => Ok(Self::Failed),
-            _ => Err(PostgresGenerationJobRepoError::InvalidStatus(
-                value.to_string(),
-            )),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct GenerationJob {
-    pub id: Uuid,
-    pub user_id: UserId,
-    pub date: Date,
-    pub status: GenerationJobStatus,
-    pub request_fingerprint: String,
-    pub request_payload: Value,
-    pub workout_id: Option<WorkoutId>,
-    pub error: Option<String>,
-    pub version: i64,
-    pub created_at: OffsetDateTime,
-    pub updated_at: OffsetDateTime,
-    pub queued_at: OffsetDateTime,
-    pub started_at: Option<OffsetDateTime>,
-    pub completed_at: Option<OffsetDateTime>,
-    pub failed_at: Option<OffsetDateTime>,
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum PostgresGenerationJobRepoError {
@@ -68,12 +14,6 @@ pub enum PostgresGenerationJobRepoError {
     InvalidStatus(String),
     #[error("job not found")]
     NotFound,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum GenerationJobListScope {
-    All,
-    Active,
 }
 
 #[derive(Clone)]
@@ -97,6 +37,76 @@ impl PostgresGenerationJobDb {
 pub struct PostgresGenerationJobRepo {
     pool: Pool<Postgres>,
     user_id: UserId,
+}
+
+#[async_trait::async_trait]
+impl GenerationJobRepo for PostgresGenerationJobRepo {
+    type RepoError = PostgresGenerationJobRepoError;
+
+    async fn create_or_reuse_active_job(
+        &self,
+        user_id: UserId,
+        date: Date,
+        request_fingerprint: &str,
+        request_payload: &Value,
+    ) -> Result<(GenerationJob, bool), Self::RepoError> {
+        debug_assert_eq!(self.user_id, user_id);
+        PostgresGenerationJobRepo::create_or_reuse_active_job(
+            self,
+            date,
+            request_fingerprint,
+            request_payload,
+        )
+        .await
+    }
+
+    async fn get_job(
+        &self,
+        user_id: UserId,
+        id: Uuid,
+    ) -> Result<Option<GenerationJob>, Self::RepoError> {
+        debug_assert_eq!(self.user_id, user_id);
+        PostgresGenerationJobRepo::get_job(self, id).await
+    }
+
+    async fn list_jobs(
+        &self,
+        user_id: UserId,
+        limit: i64,
+        scope: GenerationJobListScope,
+    ) -> Result<Vec<GenerationJob>, Self::RepoError> {
+        debug_assert_eq!(self.user_id, user_id);
+        PostgresGenerationJobRepo::list_jobs(self, limit, scope).await
+    }
+
+    async fn mark_running(
+        &self,
+        user_id: UserId,
+        id: Uuid,
+    ) -> Result<Option<GenerationJob>, Self::RepoError> {
+        debug_assert_eq!(self.user_id, user_id);
+        PostgresGenerationJobRepo::mark_running(self, id).await
+    }
+
+    async fn mark_completed(
+        &self,
+        user_id: UserId,
+        id: Uuid,
+        workout_id: WorkoutId,
+    ) -> Result<GenerationJob, Self::RepoError> {
+        debug_assert_eq!(self.user_id, user_id);
+        PostgresGenerationJobRepo::mark_completed(self, id, workout_id).await
+    }
+
+    async fn mark_failed(
+        &self,
+        user_id: UserId,
+        id: Uuid,
+        error_message: &str,
+    ) -> Result<GenerationJob, Self::RepoError> {
+        debug_assert_eq!(self.user_id, user_id);
+        PostgresGenerationJobRepo::mark_failed(self, id, error_message).await
+    }
 }
 
 impl PostgresGenerationJobRepo {
@@ -452,7 +462,8 @@ fn job_from_row(
         id: row.get("id"),
         user_id: UserId::new(row.get("user_id")),
         date: row.get("date"),
-        status: GenerationJobStatus::try_from(status.as_str())?,
+        status: GenerationJobStatus::parse_api_str(status.as_str())
+            .ok_or(PostgresGenerationJobRepoError::InvalidStatus(status))?,
         request_fingerprint: row.get("request_fingerprint"),
         request_payload: row.get("request_payload"),
         workout_id: row

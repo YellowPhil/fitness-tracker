@@ -12,7 +12,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use tracing::{instrument, warn};
 
 use crate::generation::{EnqueueGenerationResult, GenerationRequest};
-use crate::repos::generation_jobs::{GenerationJob, GenerationJobListScope, GenerationJobStatus};
+use crate::repos::generation_jobs::{GenerationJob, GenerationJobListScope};
 
 use super::types::MuscleGroupReq;
 use super::{ApiError, AppState, AuthUser};
@@ -226,7 +226,7 @@ impl From<GenerationJob> for GenerationJobResponse {
     fn from(job: GenerationJob) -> Self {
         Self {
             id: job.id.to_string(),
-            status: status_as_str(job.status).to_string(),
+            status: job.status.as_str().to_string(),
             date: job.date.to_string(),
             request_fingerprint: job.request_fingerprint,
             workout_id: job.workout_id.map(|id| id.as_uuid().to_string()),
@@ -257,14 +257,5 @@ impl From<GenerationJob> for GenerationJobResponse {
                     .ok()
             }),
         }
-    }
-}
-
-fn status_as_str(status: GenerationJobStatus) -> &'static str {
-    match status {
-        GenerationJobStatus::Queued => "queued",
-        GenerationJobStatus::Running => "running",
-        GenerationJobStatus::Completed => "completed",
-        GenerationJobStatus::Failed => "failed",
     }
 }

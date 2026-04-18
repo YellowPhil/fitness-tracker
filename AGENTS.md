@@ -81,9 +81,23 @@ The repo follows a layered architecture. Keep business rules isolated from trans
 ## Important Constraints
 
 - Preserve existing public API strings and enum values
+- Preserve canonical enum labels for exercise kind/source, muscle group, units, load type, workout source, and generation job status
 - Keep frontend types and backend DTOs in sync
+- Keep generation job lifecycle semantics aligned across services: `queued`, `running`, `completed`, `failed`
 - If adding config, update relevant `.env.example` files and compose files
 - Do not rename historical `excercise` / `excercies` paths unless doing a deliberate repo-wide migration
+
+## Known Integration Risks
+
+- Frontend and backend generation-job routes are currently not fully aligned; treat this as a high-priority integration risk
+- When changing generation-job APIs, update both `web/src/api.ts` and backend route registration together
+- Prefer adding route-mapping coverage when touching generation-job endpoints or SSE stream behavior
+
+## Reliability Rules
+
+- Avoid introducing new `unwrap` / `expect` usage at transport and integration boundaries
+- Keep Python exception handling localized and observable rather than broadly swallowing failures
+- Follow the existing event-driven generation flow instead of adding side channels around the queue, dispatcher, and SSE updates
 
 ## Deployment Notes
 
@@ -93,6 +107,7 @@ The repo follows a layered architecture. Keep business rules isolated from trans
 
 ## Agent Workflow Expectations
 
+- Check `.mindmodel/manifest.yaml` when guidance overlaps; follow precedence in this order: risks, architecture, domain, conventions, patterns, stack
 - Read the nearest architecture and style guidance before making changes
 - Prefer minimal, layer-respecting changes over broad rewrites
 - Verify the specific surface you changed instead of running unrelated commands

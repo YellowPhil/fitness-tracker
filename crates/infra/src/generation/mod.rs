@@ -4,17 +4,14 @@ pub mod event_bus;
 use std::sync::Arc;
 
 use anyhow::Context;
+use domain::generation::{GenerationDispatcher, GenerationJob, GenerationJobListScope};
 use domain::types::{MuscleGroup, UserId};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
-use crate::repos::generation_jobs::{
-    GenerationJob, GenerationJobListScope, PostgresGenerationJobDb, PostgresGenerationJobRepoError,
-};
-
-use dispatcher::GenerationDispatcher;
+use crate::repos::generation_jobs::{PostgresGenerationJobDb, PostgresGenerationJobRepoError};
 
 #[derive(Debug, Clone)]
 pub struct GenerationRequest {

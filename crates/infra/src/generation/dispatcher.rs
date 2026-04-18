@@ -10,16 +10,11 @@ use fitness_tracker_proto::common::MuscleGroup as ProtoMuscleGroup;
 use fitness_tracker_proto::workout_generator::GenerateWorkoutRequest as GenerateWorkoutGrpcRequest;
 use tracing::{error, info};
 
-use crate::generation::{GenerationPayload, parse_generation_payload};
+use crate::generation::{GenerationDispatcher, GenerationPayload, parse_generation_payload};
 use crate::repos::generation_jobs::{GenerationJob, PostgresGenerationJobDb};
 use crate::web::Databases;
 
 use super::event_bus::GenerationEventBus;
-
-#[async_trait]
-pub trait GenerationDispatcher: Send + Sync {
-    async fn dispatch(&self, job: GenerationJob) -> anyhow::Result<()>;
-}
 
 #[derive(Clone)]
 pub struct InProcessGenerationDispatcher {
